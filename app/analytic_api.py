@@ -13,12 +13,12 @@ from app.services.query_coordinator import QueryCoordinator, PromptRequest
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("analytics_agent")
+logger = logging.getLogger("analytic_agent")
 
 # Create FastAPI app
 app = FastAPI(
-    title="Analytics Agent API",
-    description="Scalable analytics agent with session management",
+    title="Analytic Agent API",
+    description="Scalable analytic agent with session management",
     version="2.0.0"
 )
 
@@ -33,7 +33,7 @@ async def receive_prompt(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
 ) -> Dict[str, Any]:
     """
-    Process analytics query with authentication and session management.
+    Process analytic query with authentication and session management.
     """
     return await coordinator.process_query(request, http_request, response, credentials)
 
