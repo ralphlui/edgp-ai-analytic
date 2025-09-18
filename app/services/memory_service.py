@@ -4,7 +4,7 @@ import uuid
 
 class ConversationMemory:
     """
-    Enhanced memory and state management for the analytics agent.
+    Enhanced memory and state management for the analytic agent.
     Tracks conversation history, user context, and session state with better
     conversation context for LLM interactions.
     """
@@ -24,7 +24,7 @@ class ConversationMemory:
                 "last_file_queried": None,
                 "last_report_type": "both",
                 "preferred_chart_type": "bar",
-                "session_focus": "analytics"
+                "session_focus": "analytic"
             }
         }
         return session_id
