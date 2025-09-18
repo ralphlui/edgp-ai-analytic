@@ -1,5 +1,5 @@
 """
-Enhanced query coordinator that passes conversation history to analytics agent.
+Enhanced query coordinator that passes conversation history to analytic agent.
 Optimized for performance and maintainability.
 """
 import logging
@@ -10,7 +10,7 @@ from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError
 
-from app.core.analytics_service import AnalyticsService
+from app.core.analytic_service import AnalyticService
 from app.services.memory_service import memory_service
 from app.auth import validate_jwt_token
 from app.utils.request_context import set_current_org_id, reset_current_org_id, get_current_org_id
@@ -22,18 +22,18 @@ FILE_PATTERN = re.compile(r"['\"]([^'\"]*\.csv)['\"]|(\w+\.csv)")
 SESSION_COOKIE_MAX_AGE = 3600
 SESSION_ID_PREFIX_LENGTH = 8
 
-logger = logging.getLogger("analytics_agent")
+logger = logging.getLogger("analytic_agent")
 
 class PromptRequest(BaseModel):
     prompt: str
     session_id: str | None = None
 
 class QueryCoordinator:
-    """Enhanced coordinator that provides conversation context to analytics service."""
+    """Enhanced coordinator that provides conversation context to analytic service."""
 
     def __init__(self):
         """Initialize the coordinator with optimized settings."""
-        self._analytics_service = AnalyticsService()
+        self._analytic_service = AnalyticService()
 
     async def process_query(
         self,
@@ -42,7 +42,7 @@ class QueryCoordinator:
         response: Response,
         credentials: HTTPAuthorizationCredentials
     ) -> Dict[str, Any]:
-        """Process analytics query with session management and conversation context."""
+        """Process analytic query with session management and conversation context."""
 
         session_id = None
         context_token = None
@@ -68,8 +68,8 @@ class QueryCoordinator:
             # 6) Set session cookie
             self._set_session_cookie(response, session_id)
 
-            # 7) Execute analytics query
-            result = await self._execute_analytics_query(
+            # 7) Execute analytic query
+            result = await self._execute_analytic_query(
                 processed_prompt, session_id, session_data["conversation_history"]
             )
 
@@ -110,7 +110,7 @@ class QueryCoordinator:
             logger.warning(f"Context org_id mismatch: context={current_org_id}, jwt={org_id}")
             return set_current_org_id(org_id)
         return None
-    
+
     async def _resolve_session_id(
         self,
         request: PromptRequest,
@@ -123,7 +123,7 @@ class QueryCoordinator:
             session_id = request.session_id
         else:
             # Check cookie
-            cookie_session_id = http_request.cookies.get("analytics_session_id")
+            cookie_session_id = http_request.cookies.get("analytic_session_id")
             session_id = cookie_session_id or memory_service.create_session(user_id)
 
         # Ensure session exists
@@ -131,7 +131,7 @@ class QueryCoordinator:
             session_id = memory_service.create_session(user_id)
 
         return session_id
-    
+
     async def _get_session_data(self, session_id: str) -> Dict[str, Any]:
         """Get session context and conversation history efficiently."""
         # Batch these calls if memory_service supports it
@@ -142,7 +142,6 @@ class QueryCoordinator:
             "context": session_context,
             "conversation_history": conversation_history
         }
-    
 
     def _process_prompt(
         self,
@@ -158,11 +157,19 @@ class QueryCoordinator:
         self._extract_file_references(session_id, resolved_prompt)
 
         return resolved_prompt
-    
+
+    def _extract_file_references(self, session_id: str, prompt: str) -> None:
+        """Extract and store file references from prompt."""
+        for match in FILE_PATTERN.finditer(prompt):
+            file_name = match.group(1) or match.group(2)
+            if file_name:
+                memory_service.store_file_reference(session_id, file_name)
+                logger.info(f"Stored file reference: {file_name} for session {session_id[:SESSION_ID_PREFIX_LENGTH]}")
+
     def _set_session_cookie(self, response: Response, session_id: str) -> None:
         """Set session cookie with optimized settings."""
         response.set_cookie(
-            key="analytics_session_id",
+            key="analytic_session_id",
             value=session_id,
             max_age=SESSION_COOKIE_MAX_AGE,
             httponly=True,
@@ -170,19 +177,18 @@ class QueryCoordinator:
             samesite="lax",
         )
 
-    async def _execute_analytics_query(
+    async def _execute_analytic_query(
         self,
         prompt: str,
         session_id: str,
         conversation_history: list
     ) -> Dict[str, Any]:
-        """Execute the analytics query with error handling."""
-        return await self._analytics_service.process_query(
+        """Execute the analytic query with error handling."""
+        return await self._analytic_service.process_query(
             prompt=prompt,
             session_id=session_id,
             conversation_history=conversation_history
-        )   
-    
+        )
 
     async def _store_interaction(
         self,
@@ -193,6 +199,15 @@ class QueryCoordinator:
         """Store successful interaction in memory service."""
         tool_name = result.get("tool_name", "unknown")
         memory_service.store_interaction(session_id, prompt, tool_name, result)
+
+    async def _store_error_interaction(
+        self,
+        session_id: str,
+        prompt: str,
+        error: Exception
+    ) -> None:
+        """Store error interaction in memory service."""
+        memory_service.store_interaction(session_id, prompt, "error", {"error": str(error)})
 
     def _log_debug_info(
         self,
@@ -208,7 +223,6 @@ class QueryCoordinator:
             logger.debug(f"Session {session_prefix} - Resolved prompt: '{resolved_prompt}'")
             logger.debug(f"Session {session_prefix} - Report type: {result.get('report_type', 'unknown')}")
 
-
     def _create_error_response(self, error_type: str, details: str) -> Dict[str, Any]:
         """Create standardized error response."""
         return {
@@ -216,8 +230,6 @@ class QueryCoordinator:
             "error": error_type,
             "message": f"An error occurred: {details}",
         }
-    
-
 
     def _cleanup_context(self, token: Optional[object]) -> None:
         """Clean up request context safely."""
