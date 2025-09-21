@@ -1,6 +1,7 @@
 from langchain_core.tools import tool
 from typing import Optional, Dict, Any
 import asyncio
+import json
 import logging
 from app.utils.request_context import get_current_org_id
 
@@ -61,7 +62,24 @@ def get_success_rate_by_file_name_tool(
         chart_type = 'bar'  # Default to bar if invalid type provided
     
     # Capture org_id in closure to preserve across async boundary
-    captured_org_id = get_current_org_id()  # Explicitly capture the value
+    captured_org_id = get_current_org_id()  # Try context variables first
+    
+    # If context variables don't work, try to get org_id from session bindings
+    if captured_org_id is None:
+        # Try to find session binding by looking through all active sessions
+        for session_id, binding in _session_tenant_bindings.items():
+            if binding and binding.get("org_id"):
+                captured_org_id = binding["org_id"]
+                logger.info(f"Using org_id from session binding: {captured_org_id}")
+                break
+    
+    if captured_org_id is None:
+        logger.error("No org_id available from context variables or session bindings")
+        return json.dumps({
+            "success": False,
+            "error": "Authentication context lost",
+            "message": "Unable to determine organization context. Please try again."
+        })
     
     # Handle the async database call - pass org_id explicitly to preserve it
     def run_async_db_call():
@@ -143,7 +161,24 @@ def get_success_rate_by_domain_name_tool(
     # Get org_id from multiple sources (parameter, context variables, thread-local, module fallback)
     
     # Capture org_id in closure to preserve across async boundary
-    captured_org_id = get_current_org_id()  # Explicitly capture the value
+    captured_org_id = get_current_org_id()  # Try context variables first
+    
+    # If context variables don't work, try to get org_id from session bindings
+    if captured_org_id is None:
+        # Try to find session binding by looking through all active sessions
+        for session_id, binding in _session_tenant_bindings.items():
+            if binding and binding.get("org_id"):
+                captured_org_id = binding["org_id"]
+                logger.info(f"Using org_id from session binding: {captured_org_id}")
+                break
+    
+    if captured_org_id is None:
+        logger.error("No org_id available from context variables or session bindings")
+        return json.dumps({
+            "success": False,
+            "error": "Authentication context lost",
+            "message": "Unable to determine organization context. Please try again."
+        })
     
     # Handle the async database call - pass org_id explicitly to preserve it
     def run_async_db_call():
