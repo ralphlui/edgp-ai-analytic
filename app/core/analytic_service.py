@@ -1,5 +1,5 @@
 """
-Core analytic service for processing queries and generating responses.
+Enhanced analytic service with improved reference resolution and LLM context.
 """
 import asyncio
 import json
@@ -23,12 +23,11 @@ class AnalyticService:
     @staticmethod
     async def process_query(prompt: str, session_id: str = None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Main entry point for processing analytic queries.
-        Detects report type using LLM and then processes the query.
-
+        Main entry point for processing analytic queries with enhanced reference resolution.
+        
         Args:
             prompt: The user's query
-            session_id: Optional session identifier for tracking
+            session_id: Session identifier for tracking
             conversation_history: Optional conversation history for context
 
         Returns a dict with keys: success (bool), message (str), chart_image (str base64)
@@ -51,16 +50,7 @@ class AnalyticService:
         
     @staticmethod
     def filter_chart_data_by_report_type(chart_data: List[Dict], report_type: str) -> List[Dict]:
-        """
-        Filter chart data based on report type.
-
-        Args:
-            chart_data: Original chart data with both success and failure
-            report_type: "success", "failure", or "both"
-
-        Returns:
-            Filtered chart data
-        """
+        """Filter chart data based on report type."""
         if report_type == "both":
             return chart_data
 
@@ -73,38 +63,84 @@ class AnalyticService:
                 filtered_data.append(item)
 
         return filtered_data
-  
 
+    @staticmethod
+    def _create_enhanced_system_message(current_date: str, reference_context: str, conversation_insights: str) -> str:
+        """Create comprehensive system message with reference resolution instructions."""
+        from app.config import SYSTEM
+        
+        base_system = SYSTEM.format(current_date=current_date)
+        
+        enhanced_instructions = f"""
+
+REFERENCE RESOLUTION INSTRUCTIONS:
+When users refer to "that file", "it", "the data", "that domain", or similar pronouns/references, 
+use the context below to resolve these references to specific file names or domains.
+
+{reference_context}
+
+CONVERSATION CONTEXT:
+{conversation_insights}
+
+IMPORTANT: When selecting tools and parameters, always resolve ambiguous references to specific 
+file names or domain names based on the context above. If a reference is unclear, ask for clarification.
+"""
+        
+        return base_system + enhanced_instructions
+
+    @staticmethod
+    def _extract_conversation_insights(conversation_history: List[Dict[str, Any]]) -> str:
+        """Extract key insights from conversation history for LLM context."""
+        if not conversation_history:
+            return "No previous conversation history."
+        
+        insights = []
+        recent_interactions = conversation_history[-3:]
+        
+        for i, interaction in enumerate(recent_interactions, 1):
+            response = interaction.get("response_summary", {})
+            
+            insight_parts = [f"Interaction {i}:"]
+            
+            if response.get("file_name"):
+                safe_filename = sanitize_filename(response['file_name'])
+                insight_parts.append(f"  - Analyzed file: {safe_filename}")
+            
+            if response.get("domain_name"):
+                domain = response['domain_name']
+                insight_parts.append(f"  - Analyzed domain: {domain}")
+            
+            if response.get("report_type"):
+                report_type = response['report_type']
+                insight_parts.append(f"  - Report type: {report_type}")
+            
+            if response.get("row_count"):
+                row_count = response['row_count']
+                insight_parts.append(f"  - Data points: {row_count}")
+            
+            insights.append("\n".join(insight_parts))
+        
+        return "\n".join(insights) if insights else "No significant previous interactions."
 
     @staticmethod
     async def process_query_with_report_type(prompt: str, report_type: str, session_id: str = None,
                                            conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Process analytic query with pre-determined report type.
-
-        Args:
-            prompt: The user's query
-            report_type: Pre-determined report type ("success", "failure", or "both")
-            session_id: Optional session identifier for tracking
-            conversation_history: Optional conversation history for context
-
-        Returns a dict with keys: success (bool), message (str), chart_image (str base64)
+        Process analytic query with enhanced LLM context and reference resolution.
         """
         try:
-            # Log detected parameters for debugging
-            logger.info(f"Processing prompt: '{prompt[:100]}...'")
-            logger.info(f"Report type: '{report_type}'")
-
             # Import here to avoid circular imports
             from .graph_builder import build_app
             from app.llm.interpretation import get_llm_interpretation
             from app.generators.chart_generator import chart_generator
-            from app.utils.sanitization import sanitize_text_input, create_safe_context_message
-            from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+            from app.utils.sanitization import sanitize_text_input
+            from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
             from datetime import date
-            from app.config import SYSTEM
+            from app.services.memory_service import memory_service
 
-            # build_app may raise if USE_LLM is False or config missing
+            logger.info(f"Processing prompt: '{prompt[:100]}...'")
+            logger.info(f"Report type: '{report_type}'")
+
             app_graph = build_app()
 
         except Exception as e:
@@ -113,62 +149,54 @@ class AnalyticService:
         # Get current date for context
         current_date = date.today().strftime('%Y-%m-%d')
 
-        # Prepare system message with current date context
-        system_message = SYSTEM.format(current_date=current_date)
+        # Get reference context from memory service
+        reference_context = memory_service.get_reference_context_for_llm(session_id) if session_id else ""
+        
+        # Extract conversation insights
+        conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
+
+        # Create enhanced system message with reference resolution
+        system_message = AnalyticService._create_enhanced_system_message(
+            current_date, reference_context, conversation_insights
+        )
+        
         messages = [SystemMessage(content=system_message)]
 
-        # Enhanced conversation history with context awareness
+        # Add simplified conversation history
         if conversation_history:
-            # Analyze recent context for better understanding
-            recent_interactions = conversation_history[-3:]
-            context_insights = []
-
-            for interaction in recent_interactions:
-                if interaction.get("response_summary", {}).get("file_name"):
-                    safe_filename = sanitize_filename(interaction['response_summary']['file_name'])
-                    context_insights.append(f"Previously analyzed: {safe_filename}")
-                if interaction.get("response_summary", {}).get("report_type"):
-                    safe_report_type = sanitize_text_input(interaction['response_summary']['report_type'], 20)
-                    context_insights.append(f"Previous focus: {safe_report_type} metrics")
-
-            # Add context-aware system message with sanitized content
-            safe_context = create_safe_context_message(context_insights)
-            context_message = f"""
-RECENT CONTEXT:
-{safe_context}
-
-Use this context to provide more relevant and personalized responses.
-"""
-            messages.append(SystemMessage(content=context_message))
-
-            # Add conversation history with sanitized inputs
+            recent_interactions = conversation_history[-2:]  # Reduced to avoid context overload
+            
             for interaction in recent_interactions:
                 if interaction.get("user_prompt"):
-                    safe_prompt = sanitize_text_input(interaction['user_prompt'], 200)
-                    messages.append(HumanMessage(content=f"Previous query: {safe_prompt}"))
+                    safe_prompt = sanitize_text_input(interaction['user_prompt'], 150)
+                    messages.append(HumanMessage(content=safe_prompt))
+                
                 if interaction.get("response_summary", {}).get("message"):
-                    # Extract key insights from previous response
+                    # Keep only key metrics from previous responses
                     prev_response = interaction["response_summary"]["message"]
-                    # Truncate if too long but keep key metrics
-                    if len(prev_response) > 150:
-                        # Try to keep percentage/rate information
-                        import re
-                        rates = re.findall(r'\d+\.?\d*%', prev_response)
-                        if rates:
-                            from app.utils.sanitization import sanitize_numeric_value
-                            safe_rates = [sanitize_numeric_value(rate) for rate in rates[:2]]
-                            prev_response = f"Previous analysis showed rates: {', '.join(safe_rates)}"
-                        else:
-                            prev_response = sanitize_text_input(prev_response[:150], 150) + "..."
-                    else:
-                        prev_response = sanitize_text_input(prev_response, 150)
-                    messages.append(AIMessage(content=f"Previous analysis: {prev_response}"))
+                    
+                    # Extract key information (success rates, file names, etc.)
+                    import re
+                    key_info = []
+                    
+                    # Extract percentage rates
+                    rates = re.findall(r'\d+\.?\d*%', prev_response)
+                    if rates:
+                        key_info.append(f"Rates: {', '.join(rates[:3])}")
+                    
+                    # Extract file/domain info
+                    if interaction["response_summary"].get("file_name"):
+                        key_info.append(f"File: {interaction['response_summary']['file_name']}")
+                    
+                    if key_info:
+                        summary = " | ".join(key_info)
+                        messages.append(AIMessage(content=f"Previous: {summary}"))
 
-        # Add the current prompt with sanitization
+        # Add the current prompt
         safe_prompt = sanitize_text_input(prompt, 300)
         messages.append(HumanMessage(content=safe_prompt))
 
-        # Prepare state with all required parameters
+        # Prepare state
         state = {
             "messages": messages,
             "report_type": report_type,
@@ -177,43 +205,26 @@ Use this context to provide more relevant and personalized responses.
 
         loop = asyncio.get_running_loop()
         try:
-            # First pass: Run the graph to get data
+            # Execute the graph
             compiled_result = await loop.run_in_executor(None, lambda: app_graph.invoke(state))
         except Exception as e:
-            # Enhanced error handling with context preservation
             logger.exception(f"Query processing failed: {e}")
-
-            # Provide context-aware error message
-            error_context = {
-                "report_type": report_type,
-                "session_id": session_id[:8] if session_id else None,
-                "has_conversation_history": bool(conversation_history),
-                "error_type": type(e).__name__
-            }
-
+            
             error_message = f"""
 I encountered an issue processing your {report_type} analysis request.
 
-ERROR CONTEXT:
-├── Report Type: {error_context['report_type']}
-├── Session: {error_context['session_id'] or 'New session'}
-├── Conversation History: {'Available' if error_context['has_conversation_history'] else 'None'}
-├── Error Type: {error_context['error_type']}
-
 This might be due to:
 - Database connectivity issues
-- Invalid file references
+- Invalid file/domain references
 - Authentication problems
 - System resource constraints
 
-Please try your request again, or contact support if the issue persists.
+Please verify your file or domain references and try again.
 """
-
             return {
                 "success": False,
                 "error": str(e),
                 "message": error_message.strip(),
-                "context": error_context,
                 "chart_image": None
             }
 
@@ -221,47 +232,46 @@ Please try your request again, or contact support if the issue persists.
         tool_results = []
         chart_data = []
         file_name = None
+        domain_name = None
         row_count = 0
         date_filter_used = None
-        chart_type = "bar"  # Default chart type
+        chart_type = "bar"
 
         for m in compiled_result.get("messages", []):
-            if isinstance(m, ToolMessage):
-                try:
-                    tool_data = json.loads(m.content) if isinstance(m.content, str) else m.content
-                    tool_results.append(tool_data)
+            if hasattr(m, 'content') and hasattr(m, '__class__'):
+                # Handle ToolMessage
+                if m.__class__.__name__ == 'ToolMessage':
+                    try:
+                        tool_data = json.loads(m.content) if isinstance(m.content, str) else m.content
+                        tool_results.append(tool_data)
 
-                    # Extract chart data from tool results
-                    if tool_data.get("success") and "chart_data" in tool_data:
-                        chart_data = tool_data.get("chart_data", [])
-                        file_name = tool_data.get("file_name")
-                        row_count = tool_data.get("row_count", 0)
+                        if tool_data.get("success") and "chart_data" in tool_data:
+                            chart_data = tool_data.get("chart_data", [])
+                            file_name = tool_data.get("file_name")
+                            domain_name = tool_data.get("domain_name")
+                            row_count = tool_data.get("row_count", 0)
 
-                        # Get the chart type specified by the LLM
-                        if tool_data.get("chart_type_requested"):
-                            chart_type = tool_data.get("chart_type", "bar")
-                            logger.info(f"LLM specified chart type: {chart_type}")
+                            if tool_data.get("chart_type_requested"):
+                                chart_type = tool_data.get("chart_type", "bar")
 
-                        # Check if date filters were used
-                        if tool_data.get("date_filter"):
-                            date_filter_used = tool_data.get("date_filter")
-                except:
-                    tool_results.append(m.content)
+                            if tool_data.get("date_filter"):
+                                date_filter_used = tool_data.get("date_filter")
+                    except Exception as e:
+                        logger.warning(f"Failed to parse tool message: {e}")
+                        tool_results.append(str(m.content))
 
-            # Also check AIMessage for tool calls to see what dates and chart type were used
-            if isinstance(m, AIMessage) and hasattr(m, 'tool_calls'):
-                for tool_call in m.tool_calls:
-                    if tool_call.get('args'):
-                        args = tool_call['args']
-                        if args.get('start_date') or args.get('end_date'):
-                            date_filter_used = {
-                                'start_date': args.get('start_date'),
-                                'end_date': args.get('end_date')
-                            }
-                        # Get chart type from tool call arguments
-                        if args.get('chart_type'):
-                            chart_type = args.get('chart_type')
-                            logger.info(f"LLM called tool with chart_type: {chart_type}")
+                # Handle AIMessage with tool calls
+                elif m.__class__.__name__ == 'AIMessage' and hasattr(m, 'tool_calls'):
+                    for tool_call in m.tool_calls or []:
+                        if tool_call.get('args'):
+                            args = tool_call['args']
+                            if args.get('start_date') or args.get('end_date'):
+                                date_filter_used = {
+                                    'start_date': args.get('start_date'),
+                                    'end_date': args.get('end_date')
+                                }
+                            if args.get('chart_type'):
+                                chart_type = args.get('chart_type')
 
         # Filter chart data based on report type
         original_chart_data = chart_data.copy()
@@ -274,23 +284,23 @@ Please try your request again, or contact support if the issue persists.
             try:
                 chart_image = chart_generator.generate_chart(
                     chart_data=filtered_chart_data,
-                    chart_type=chart_type,  # Use LLM-specified chart type
-                    file_name=file_name,
+                    chart_type=chart_type,
+                    file_name=file_name or domain_name,
                     report_type=report_type
                 )
                 chart_generated = True
-                logger.info(f"Generated {chart_type} chart for {file_name}")
+                logger.info(f"Generated {chart_type} chart for {file_name or domain_name}")
             except Exception as e:
                 logger.exception(f"Failed to generate chart: {e}")
 
-        # Now, have the LLM interpret the results with chart context
+        # Get LLM interpretation with enhanced context
         interpretation = await get_llm_interpretation(
             prompt=prompt,
             chart_data=filtered_chart_data,
             original_chart_data=original_chart_data,
             chart_type=chart_type,
             chart_generated=chart_generated,
-            file_name=file_name,
+            file_name=file_name or domain_name,  # Pass domain_name as file_name if no file_name
             row_count=row_count,
             report_type=report_type,
             date_filter_used=date_filter_used,
@@ -303,16 +313,15 @@ Please try your request again, or contact support if the issue persists.
             "chart_image": chart_image
         }
 
-        # Add date filters if they were used
-        # if date_filter_used:
-        #     result["date_filters"] = date_filter_used
-
-        # Add additional data if DEBUG mode
+        # Add debug data if enabled
         from app.config import DEBUG
         if DEBUG:
-            result["chart_data"] = filtered_chart_data
-            result["original_chart_data"] = original_chart_data
-            result["tool_results"] = tool_results
-            result["chart_type"] = chart_type
+            result.update({
+                "chart_data": filtered_chart_data,
+                "original_chart_data": original_chart_data,
+                "tool_results": tool_results,
+                "chart_type": chart_type,
+                "reference_context": reference_context
+            })
 
-        return result  
+        return result

@@ -9,6 +9,35 @@ logger = logging.getLogger("tools_agent")
 # Module-level storage for current request org_id (fallback)
 _current_org_id: Optional[str] = None
 
+# Session to tenant binding storage
+_session_tenant_bindings: Dict[str, Dict[str, str]] = {}
+
+def bind_session_to_tenant(session_id: str, user_id: str, org_id: str) -> bool:
+    """Bind a session to tenant context for cross-thread access."""
+    try:
+        _session_tenant_bindings[session_id] = {
+            "user_id": user_id,
+            "org_id": org_id
+        }
+        logger.info(f"Bound session {session_id} to org {org_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to bind session {session_id}: {e}")
+        return False
+
+def unbind_session(session_id: str) -> None:
+    """Remove session binding."""
+    try:
+        if session_id in _session_tenant_bindings:
+            del _session_tenant_bindings[session_id]
+            logger.info(f"Unbound session {session_id}")
+    except Exception as e:
+        logger.error(f"Failed to unbind session {session_id}: {e}")
+
+def get_session_context(session_id: str) -> Optional[Dict[str, str]]:
+    """Get session context for tools."""
+    return _session_tenant_bindings.get(session_id)
+
 
 @tool("get_success_rate_by_file_name", return_direct=False)
 def get_success_rate_by_file_name_tool(
@@ -70,16 +99,21 @@ def get_success_rate_by_file_name_tool(
         
         # Add stop flag to prevent infinite loops
         result.setdefault("stop", True)
-        return result
+        
+        # Return as JSON string for LangGraph compatibility
+        import json
+        return json.dumps(result)
     else:
         # Handle unexpected result format
-        return {
+        error_result = {
             "success": False,
             "message": f"Unexpected result format from database: {type(result)}",
             "raw_result": str(result),
             "chart_type": chart_type,
             "stop": True
         }
+        import json
+        return json.dumps(error_result)
 
 
 @tool("get_success_rate_by_domain_name", return_direct=False)
@@ -148,13 +182,18 @@ def get_success_rate_by_domain_name_tool(
         
         # Add stop flag to prevent infinite loops
         result.setdefault("stop", True)
-        return result
+        
+        # Return as JSON string for LangGraph compatibility
+        import json
+        return json.dumps(result)
     else:
         # Handle unexpected result format
-        return {
+        error_result = {
             "success": False,
             "message": f"Unexpected result format from database: {type(result)}",
             "raw_result": str(result),
             "chart_type": chart_type,
             "stop": True
         }
+        import json
+        return json.dumps(error_result)
