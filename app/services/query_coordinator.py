@@ -13,13 +13,10 @@ from app.core.analytic_service import AnalyticService
 from app.services.memory_service import memory_service
 from app.auth import validate_jwt_token
 from app.utils.request_context import (
-    set_tenant_context, 
-    reset_tenant_context, 
-    set_current_org_id, 
-    reset_current_org_id, 
-    get_current_org_id
+    set_tenant_context,
+    reset_tenant_context
 )
-from app.core.tools_agent import bind_session_to_tenant, unbind_session
+from app.tools import bind_session_to_tenant, unbind_session
 
 # Constants
 SESSION_COOKIE_MAX_AGE = 3600

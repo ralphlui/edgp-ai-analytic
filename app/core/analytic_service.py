@@ -5,8 +5,9 @@ import asyncio
 import json
 import logging
 from typing import List, Dict, Any
-from app.core.tools_agent import get_success_rate_by_file_name_tool, get_success_rate_by_domain_name_tool
-from app.core.rate_tools import get_rule_failure_rate_tool, get_data_quality_failure_rate_tool
+from app.tools import (
+    ANALYSIS_TOOLS
+)
 from app.llm.classification import get_report_type_from_llm
 from app.utils.sanitization import sanitize_filename
 
@@ -16,12 +17,8 @@ logger = logging.getLogger(__name__)
 class AnalyticService:
     """Handles LLM tool selection, execution, chart generation, and interpretation."""
 
-    TOOLS = [
-        get_success_rate_by_file_name_tool,
-        get_success_rate_by_domain_name_tool,
-        get_rule_failure_rate_tool,
-        get_data_quality_failure_rate_tool
-    ]
+    # Use the centralized tool registry
+    TOOLS = ANALYSIS_TOOLS
 
     @staticmethod
     async def process_query(prompt: str, session_id: str = None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
