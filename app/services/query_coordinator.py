@@ -11,7 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.analytic_service import AnalyticService
 from app.services.memory_service import memory_service
-from app.auth import validate_jwt_token
+from app.auth import validate_user_profile_with_response
 from app.utils.request_context import (
     set_tenant_context,
     reset_tenant_context
@@ -57,15 +57,20 @@ class QueryCoordinator:
         tenant_tokens = None
 
         try:
-            # 1) SECURITY: JWT validation
-            user = validate_jwt_token(credentials)
+            # 1) SECURITY: JWT validation and user profile verification
+            auth_result = await validate_user_profile_with_response(credentials)
+            if not auth_result["success"]:
+                logger.warning(f"Authentication failed: {auth_result['message']}")
+                return auth_result  # Return structured error response
+            
+            user = auth_result["payload"]
             user_id = user.get("sub")
             org_id = user.get("orgId")
             
             if not user_id or not org_id:
                 raise ValueError("JWT missing required claims: sub (user_id) or orgId")
             
-            logger.info(f"JWT validated - user: {user_id[:8]}..., org: {org_id[:8]}...")
+            logger.info(f"JWT validated and user profile verified - user: {user_id[:8]}..., org: {org_id[:8]}...")
 
             # 2) SECURITY: Resolve secure session ID
             session_id = await self._resolve_secure_session_id(request, http_request, user_id)
