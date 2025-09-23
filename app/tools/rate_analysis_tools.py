@@ -1,12 +1,21 @@
 """
 Comprehensive rate analysis tools for the analytic system.
-Consolidated module containing all success/failure rate calculation tools.
+Consolidated module containing all success/failu        return format_tool_response(result, chart_type, "get_domain_analysis_rates_tool", return_as_json=True, report_type=report_type)
+
+    except Exception as e:
+        logger.exception(f"Unexpected error in get_domain_analysis_rates_tool: {e}")
+        return format_tool_response({
+            "success": False,
+            "error": str(e),
+            "message": f"An unexpected error occurred while analyzing domain rates for '{domain_name}'. Please try again."
+        }, chart_type, "get_domain_analysis_rates_tool", return_as_json=True, report_type=report_type)alculation tools.
 """
 from langchain_core.tools import tool
 from typing import Optional
 import logging
 from .tool_utils import (
     validate_chart_type,
+    validate_report_type,
     get_org_id_for_tool,
     execute_async_tool_call,
     format_tool_response,
@@ -22,7 +31,8 @@ def get_file_analysis_rates_tool(
     file_name: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    chart_type: Optional[str] = "bar"
+    chart_type: Optional[str] = "bar",
+    report_type: Optional[str] = None
 ) -> str:
     """Calculate comprehensive success/failure rates for a file with visualization options.
 
@@ -34,9 +44,11 @@ def get_file_analysis_rates_tool(
         start_date: Start date for filtering (YYYY-MM-DD format)
         end_date: End date for filtering (YYYY-MM-DD format)
         chart_type: Type of chart to generate ('bar', 'pie', 'donut', 'line', 'stacked'). Default is 'bar'.
+        report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
     """
-    # Validate chart_type
+    # Validate chart_type and report_type
     chart_type = validate_chart_type(chart_type)
+    report_type = validate_report_type(report_type)
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
@@ -53,7 +65,7 @@ def get_file_analysis_rates_tool(
             file_name, captured_org_id, start_date, end_date
         )
 
-        return format_tool_response(result, chart_type, "get_file_analysis_rates_tool", return_as_json=True)
+        return format_tool_response(result, chart_type, "get_file_analysis_rates_tool", return_as_json=True, report_type=report_type)
 
     except Exception as e:
         logger.exception(f"Unexpected error in get_file_analysis_rates_tool: {e}")
@@ -61,7 +73,7 @@ def get_file_analysis_rates_tool(
             "success": False,
             "error": str(e),
             "message": f"An unexpected error occurred while analyzing file rates for '{file_name}'. Please try again."
-        }, chart_type, "get_file_analysis_rates_tool", return_as_json=True)
+        }, chart_type, "get_file_analysis_rates_tool", return_as_json=True, report_type=report_type)
 
 
 @tool("get_domain_analysis_rates", return_direct=False)
@@ -69,7 +81,8 @@ def get_domain_analysis_rates_tool(
     domain_name: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    chart_type: Optional[str] = "bar"
+    chart_type: Optional[str] = "bar",
+    report_type: Optional[str] = None
 ) -> str:
     """Calculate comprehensive success/failure rates for a domain with visualization options.
     
@@ -81,9 +94,11 @@ def get_domain_analysis_rates_tool(
         start_date: Start date for filtering (YYYY-MM-DD format)
         end_date: End date for filtering (YYYY-MM-DD format)
         chart_type: Type of chart to generate ('bar', 'pie', 'donut', 'line', 'stacked'). Default is 'bar'.
+        report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
     """
-    # Validate chart_type
+    # Validate chart_type and report_type
     chart_type = validate_chart_type(chart_type)
+    report_type = validate_report_type(report_type)
     
     # Clean up domain_name - remove "_domain" suffix if present
     if domain_name and domain_name.endswith('_domain'):
@@ -121,7 +136,8 @@ def get_rule_validation_rates_tool(
     file_name: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    chart_type: Optional[str] = "bar"
+    chart_type: Optional[str] = "bar",
+    report_type: Optional[str] = None
 ) -> str:
     """Calculate comprehensive success/failure rates for rule validation with detailed analysis.
 
@@ -134,12 +150,14 @@ def get_rule_validation_rates_tool(
         start_date: Start date for filtering (YYYY-MM-DD format)
         end_date: End date for filtering (YYYY-MM-DD format)
         chart_type: Type of chart to generate ('bar', 'pie', 'donut'). Default is 'bar'.
+        report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
 
     Returns:
         JSON string with rule validation rates, counts, performance assessment, and chart data
     """
-    # Validate chart_type
+    # Validate chart_type and report_type
     chart_type = validate_chart_type(chart_type)
+    report_type = validate_report_type(report_type)
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
@@ -161,7 +179,7 @@ def get_rule_validation_rates_tool(
             failure_rate = result.get("failure_rate", 0)
             add_performance_assessment(result, failure_rate, "rule")
 
-        return format_tool_response(result, chart_type, "get_rule_validation_rates_tool", return_as_json=True)
+        return format_tool_response(result, chart_type, "get_rule_validation_rates_tool", return_as_json=True, report_type=report_type)
 
     except Exception as e:
         logger.exception(f"Unexpected error in get_rule_validation_rates_tool: {e}")
@@ -169,7 +187,7 @@ def get_rule_validation_rates_tool(
             "success": False,
             "error": str(e),
             "message": f"An unexpected error occurred while analyzing rule validation rates for '{file_name}'. Please try again."
-        }, chart_type, "get_rule_validation_rates_tool", return_as_json=True)
+        }, chart_type, "get_rule_validation_rates_tool", return_as_json=True, report_type=report_type)
 
 
 @tool("get_data_quality_validation_rates", return_direct=False)
@@ -177,7 +195,8 @@ def get_data_quality_validation_rates_tool(
     file_name: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    chart_type: Optional[str] = "bar"
+    chart_type: Optional[str] = "bar",
+    report_type: Optional[str] = None
 ) -> str:
     """Calculate comprehensive success/failure rates for data quality validation with detailed analysis.
 
@@ -190,12 +209,14 @@ def get_data_quality_validation_rates_tool(
         start_date: Start date for filtering (YYYY-MM-DD format)
         end_date: End date for filtering (YYYY-MM-DD format)
         chart_type: Type of chart to generate ('bar', 'pie', 'donut'). Default is 'bar'.
+        report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
 
     Returns:
         JSON string with data quality validation rates, counts, performance assessment, and chart data
     """
-    # Validate chart_type
+    # Validate chart_type and report_type
     chart_type = validate_chart_type(chart_type)
+    report_type = validate_report_type(report_type)
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
@@ -217,7 +238,7 @@ def get_data_quality_validation_rates_tool(
             failure_rate = result.get("failure_rate", 0)
             add_performance_assessment(result, failure_rate, "data_quality")
 
-        return format_tool_response(result, chart_type, "get_data_quality_validation_rates_tool", return_as_json=True)
+        return format_tool_response(result, chart_type, "get_data_quality_validation_rates_tool", return_as_json=True, report_type=report_type)
 
     except Exception as e:
         logger.exception(f"Unexpected error in get_data_quality_validation_rates_tool: {e}")
@@ -225,4 +246,4 @@ def get_data_quality_validation_rates_tool(
             "success": False,
             "error": str(e),
             "message": f"An unexpected error occurred while analyzing data quality validation rates for '{file_name}'. Please try again."
-        }, chart_type, "get_data_quality_validation_rates_tool", return_as_json=True)
+        }, chart_type, "get_data_quality_validation_rates_tool", return_as_json=True, report_type=report_type)

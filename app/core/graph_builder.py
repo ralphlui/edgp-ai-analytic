@@ -99,6 +99,8 @@ def build_app():
                                 row_count = result["row_count"]
                             if "chart_type" in result:
                                 chart_type = result["chart_type"]
+                            if "report_type" in result:
+                                report_type = result["report_type"]
 
                     fallback_content = format_basic_message(
                         chart_data=[],  # No chart data in fallback
@@ -106,7 +108,8 @@ def build_app():
                         row_count=row_count,
                         chart_type=chart_type,
                         report_type=report_type,
-                        date_filter_used=None
+                        date_filter_used=None,
+                        original_chart_data=[]
                     )
                     return {"messages": [AIMessage(content=fallback_content)]}
 
@@ -125,7 +128,8 @@ def build_app():
                     row_count=0,
                     chart_type="bar",
                     report_type="both",
-                    date_filter_used=None
+                    date_filter_used=None,
+                    original_chart_data=[]
                 )
                 return {"messages": [AIMessage(content=fallback_msg)]}
 

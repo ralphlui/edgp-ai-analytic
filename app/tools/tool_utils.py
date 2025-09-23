@@ -31,6 +31,14 @@ def validate_chart_type(chart_type: Optional[str]) -> str:
         return 'bar'  # Default to bar if invalid type provided
     return chart_type
 
+def validate_report_type(report_type: Optional[str]) -> str:
+    """Validate and normalize report type parameter."""
+    valid_report_types = ['success', 'failure', 'both']
+    # Handle None, empty string, or invalid values
+    if not report_type or report_type not in valid_report_types:
+        return ''  # Default to empty string if invalid type provided
+    return report_type
+
 def get_org_id_for_tool() -> Optional[str]:
     """
     Get org_id from multiple sources with fallback strategy.
@@ -101,7 +109,8 @@ def format_tool_response(
     result: Dict[str, Any],
     chart_type: str,
     tool_name: str,
-    return_as_json: bool = False
+    return_as_json: bool = False,
+    report_type: str = "both"
 ) -> Any:
     """
     Format tool response with consistent structure and error handling.
@@ -111,6 +120,7 @@ def format_tool_response(
         chart_type: Validated chart type
         tool_name: Name of the calling tool for error messages
         return_as_json: Whether to return JSON string or dict
+        report_type: Type of report to generate ('success', 'failure', 'both')
     
     Returns:
         Formatted response as JSON string or dict
@@ -119,6 +129,8 @@ def format_tool_response(
         if result.get("success"):
             result["chart_type"] = chart_type
             result["chart_type_requested"] = True
+            result["report_type"] = report_type
+            result["report_type_requested"] = True
             result.setdefault("stop", True)
         
         if return_as_json:
@@ -133,6 +145,7 @@ def format_tool_response(
             "error": str(e),
             "message": f"An unexpected error occurred in {tool_name}. Please try again.",
             "chart_type": chart_type,
+            "report_type": report_type,
             "stop": True
         }
         

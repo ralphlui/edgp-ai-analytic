@@ -15,10 +15,53 @@ def format_error_message(error_type: str, user_message: str, technical_details: 
 
 
 def format_basic_message(chart_data: List[Dict], file_name: str, row_count: int,
-                        chart_type: str, report_type: str, date_filter_used: Dict[str, str]) -> str:
+                        chart_type: str, report_type: str, date_filter_used: Dict[str, str],
+                        original_chart_data: List[Dict] = None) -> str:
     """Enhanced fallback message formatter with intelligent insights."""
+    
+    # Debug logging to help troubleshoot
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"format_basic_message called with: report_type='{report_type}', chart_data_len={len(chart_data) if chart_data else 0}, original_data_len={len(original_chart_data) if original_chart_data else 0}, file_name='{file_name}'")
+
+    # Use original_chart_data to understand the full picture
+    all_data = original_chart_data if original_chart_data else chart_data
 
     if not chart_data:
+        # Check if we have data in the original that matches our report type
+        if all_data and report_type != "both":
+            # Count successes and failures in original data
+            success_count = sum(1 for item in all_data if item.get('status', '').lower() in ['success', 'passed', 'pass', 'ok', 'successful'])
+            failure_count = sum(1 for item in all_data if item.get('status', '').lower() in ['fail', 'failure', 'failed', 'error', 'issue', 'problem'])
+            total_count = len(all_data)
+            
+            if report_type == "failure" and failure_count > 0:
+                failure_rate = (failure_count / total_count) * 100 if total_count > 0 else 0
+                base_msg = f"Failure analysis complete: {failure_count} out of {total_count} records failed ({failure_rate:.1f}% failure rate)"
+                if file_name:
+                    base_msg += f" in file: {sanitize_filename(file_name)}"
+                return base_msg
+            elif report_type == "success" and success_count > 0:
+                success_rate = (success_count / total_count) * 100 if total_count > 0 else 0
+                base_msg = f"Success analysis complete: {success_count} out of {total_count} records succeeded ({success_rate:.1f}% success rate)"
+                if file_name:
+                    base_msg += f" in file: {sanitize_filename(file_name)}"
+                return base_msg
+        elif all_data and report_type == "both":
+            # For "both" report type, check if we have any data at all
+            success_count = sum(1 for item in all_data if item.get('status', '').lower() in ['success', 'passed', 'pass', 'ok', 'successful'])
+            failure_count = sum(1 for item in all_data if item.get('status', '').lower() in ['fail', 'failure', 'failed', 'error', 'issue', 'problem'])
+            total_count = len(all_data)
+            
+            if total_count > 0:
+                success_rate = (success_count / total_count) * 100 if total_count > 0 else 0
+                failure_rate = (failure_count / total_count) * 100 if total_count > 0 else 0
+                base_msg = f"Analysis complete: {success_count} successful, {failure_count} failed out of {total_count} total records ({success_rate:.1f}% success, {failure_rate:.1f}% failure)"
+                if file_name:
+                    base_msg += f" in file: {sanitize_filename(file_name)}"
+                return base_msg
+        
+        # Fallback for when no relevant data is found
         base_msg = f"No {sanitize_text_input(report_type, 20)} data found"
         if file_name:
             base_msg += f" for file: {sanitize_filename(file_name)}"
