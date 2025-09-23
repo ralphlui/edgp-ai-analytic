@@ -131,7 +131,6 @@ file names or domain names based on the context above. If a reference is unclear
         try:
             # Import here to avoid circular imports
             from .graph_builder import build_app
-            from app.llm.interpretation import get_llm_interpretation
             from app.generators.chart_generator import chart_generator
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -196,11 +195,18 @@ file names or domain names based on the context above. If a reference is unclear
         safe_prompt = sanitize_text_input(prompt, 300)
         messages.append(HumanMessage(content=safe_prompt))
 
-        # Prepare state
+        # Prepare state with enhanced context
         state = {
             "messages": messages,
             "report_type": report_type,
-            "session_id": session_id
+            "session_id": session_id,
+            
+            # Add processing hints for LLM
+            "processing_context": {
+                "has_reference_context": bool(reference_context),
+                "conversation_length": len(conversation_history or []),
+                "current_date": current_date,
+            }
         }
 
         loop = asyncio.get_running_loop()
@@ -293,19 +299,26 @@ Please verify your file or domain references and try again.
             except Exception as e:
                 logger.exception(f"Failed to generate chart: {e}")
 
-        # Get LLM interpretation with enhanced context
-        interpretation = await get_llm_interpretation(
-            prompt=prompt,
-            chart_data=filtered_chart_data,
-            original_chart_data=original_chart_data,
-            chart_type=chart_type,
-            chart_generated=chart_generated,
-            file_name=file_name or domain_name,  # Pass domain_name as file_name if no file_name
-            row_count=row_count,
-            report_type=report_type,
-            date_filter_used=date_filter_used,
-            conversation_history=conversation_history
-        )
+        # Extract LLM interpretation from graph results
+        interpretation = None
+        for m in compiled_result.get("messages", []):
+            if hasattr(m, 'content') and hasattr(m, '__class__'):
+                # Get the final AI interpretation message
+                if m.__class__.__name__ == 'AIMessage' and not hasattr(m, 'tool_calls'):
+                    interpretation = m.content
+                    break
+        
+        # Fallback if no interpretation found
+        if not interpretation:
+            from app.utils.formatting import format_basic_message
+            interpretation = format_basic_message(
+                chart_data=filtered_chart_data,
+                file_name=file_name or domain_name,
+                row_count=row_count,
+                chart_type=chart_type,
+                report_type=report_type,
+                date_filter_used=date_filter_used
+            )
 
         result = {
             "success": True,
