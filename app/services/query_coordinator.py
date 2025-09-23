@@ -7,11 +7,12 @@ from typing import Dict, Any, Optional
 
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from app.core.analytic_service import AnalyticService
 from app.services.memory_service import memory_service
 from app.auth import validate_user_profile_with_response
+from app.utils.sanitization import sanitize_text_input
 from app.utils.request_context import (
     set_tenant_context,
     reset_tenant_context
@@ -27,6 +28,32 @@ logger = logging.getLogger("analytic_agent")
 class PromptRequest(BaseModel):
     prompt: str
     session_id: str | None = None
+    
+    @field_validator('prompt')
+    @classmethod
+    def validate_prompt(cls, v):
+        """Validate prompt input for basic security checks."""
+        if not v or not v.strip():
+            raise ValueError('Prompt cannot be empty')
+        
+        if len(v) > 5000:
+            raise ValueError('Prompt too long (max 5000 characters)')
+        
+        # Check for obviously malicious patterns (before full sanitization)
+        dangerous_indicators = [
+            'system:', 'assistant:', 'user:', 'human:', 'ai:',
+            'ignore previous', 'forget previous', 'disregard',
+            'you are now', 'your role is', 'act as', 'pretend to be',
+            'execute:', 'run:', 'rm -rf', '\\n\\n', '%0A%0A',
+            '[inst]', '[/inst]', '<|', '|>', '{{', '}}'
+        ]
+        
+        v_lower = v.lower()
+        for indicator in dangerous_indicators:
+            if indicator in v_lower:
+                raise ValueError(f'Potentially malicious content detected: {indicator}')
+        
+        return v
 
 class QueryCoordinator:
     """
@@ -86,27 +113,31 @@ class QueryCoordinator:
             # 5) Get conversation history
             conversation_history = memory_service.get_conversation_history(session_id)
 
-            # 6) SIMPLIFIED: Extract explicit references from prompt
-            memory_service.extract_and_store_references(session_id, request.prompt)
+            # 6) SECURITY: Sanitize user input to prevent prompt injection
+            safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
+            logger.debug(f"Sanitized prompt for session {session_id[:8]}...")
 
-            # 7) SIMPLIFIED: Basic reference resolution (only explicit cases)
-            processed_prompt = memory_service.simple_reference_resolution(session_id, request.prompt)
+            # 7) SIMPLIFIED: Extract explicit references from sanitized prompt
+            memory_service.extract_and_store_references(session_id, safe_prompt)
 
-            # 8) Set session cookie
+            # 8) SIMPLIFIED: Basic reference resolution (only explicit cases)
+            processed_prompt = memory_service.simple_reference_resolution(session_id, safe_prompt)
+
+            # 9) Set session cookie
             self._set_session_cookie(response, session_id)
 
-            # 9) Execute analytic query (LLM handles complex reference resolution)
+            # 10) Execute analytic query (LLM handles complex reference resolution)
             result = await self._analytic_service.process_query(
                 prompt=processed_prompt,
                 session_id=session_id,
                 conversation_history=conversation_history
             )
 
-            # 10) Store interaction result
-            self._store_interaction_result(session_id, request.prompt, processed_prompt, result)
+            # 11) Store interaction result (use original prompt for logging accuracy)
+            self._store_interaction_result(session_id, safe_prompt, processed_prompt, result)
 
-            # 11) Log debug information
-            self._log_debug_info(session_id, request.prompt, processed_prompt, result)
+            # 12) Log debug information
+            self._log_debug_info(session_id, safe_prompt, processed_prompt, result)
 
             return result
 
@@ -120,7 +151,9 @@ class QueryCoordinator:
         except Exception as error:
             logger.exception(f"Query processing failed: {error}")
             if session_id:
-                self._store_error_interaction(session_id, request.prompt, error)
+                # Use sanitized prompt for error logging too
+                safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
+                self._store_error_interaction(session_id, safe_prompt, error)
             return self._create_error_response("Processing failed", str(error))
 
         finally:
