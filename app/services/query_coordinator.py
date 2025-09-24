@@ -121,23 +121,23 @@ class QueryCoordinator:
             memory_service.extract_and_store_references(session_id, safe_prompt)
 
             # 8) SIMPLIFIED: Basic reference resolution (only explicit cases)
-            processed_prompt = memory_service.simple_reference_resolution(session_id, safe_prompt)
+            #processed_prompt = memory_service.simple_reference_resolution(session_id, safe_prompt)
 
             # 9) Set session cookie
             self._set_session_cookie(response, session_id)
 
             # 10) Execute analytic query (LLM handles complex reference resolution)
             result = await self._analytic_service.process_query(
-                prompt=processed_prompt,
+                prompt=safe_prompt,
                 session_id=session_id,
                 conversation_history=conversation_history
             )
 
             # 11) Store interaction result (use original prompt for logging accuracy)
-            self._store_interaction_result(session_id, safe_prompt, processed_prompt, result)
+            self._store_interaction_result(session_id, safe_prompt, result)
 
             # 12) Log debug information
-            self._log_debug_info(session_id, safe_prompt, processed_prompt, result)
+            self._log_debug_info(session_id, safe_prompt, result)
 
             return result
 
@@ -217,7 +217,6 @@ class QueryCoordinator:
         self, 
         session_id: str, 
         original_prompt: str, 
-        processed_prompt: str,
         result: Dict[str, Any]
     ) -> None:
         """Store interaction result in memory service."""
@@ -249,14 +248,12 @@ class QueryCoordinator:
         self, 
         session_id: str, 
         original_prompt: str, 
-        processed_prompt: str,
         result: Dict[str, Any]
     ) -> None:
         """Log debug information if debug logging is enabled."""
         if logger.isEnabledFor(logging.DEBUG):
             session_prefix = session_id[:SESSION_ID_PREFIX_LENGTH]
             logger.debug(f"Session {session_prefix} - Original: '{original_prompt[:50]}...'")
-            logger.debug(f"Session {session_prefix} - Processed: '{processed_prompt[:50]}...'")
             logger.debug(f"Session {session_prefix} - Success: {result.get('success', False)}")
             
             if result.get("file_name"):
