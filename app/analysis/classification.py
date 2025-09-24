@@ -27,6 +27,7 @@ async def get_report_type(prompt: str) -> str:
     """
     # Quick regex check for obvious cases (handles ~80-90% of queries instantly)
     quick_result = detect_report_type_simple(prompt)
+    return quick_result
     if quick_result != "uncertain":
         logger.info(f"Quick classification: '{quick_result}' for prompt: '{prompt[:50]}...'")
         return quick_result
