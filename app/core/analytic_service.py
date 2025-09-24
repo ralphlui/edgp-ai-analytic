@@ -5,8 +5,10 @@ import asyncio
 import json
 import logging
 from typing import List, Dict, Any
-from app.core.tools_agent import get_success_rate_by_file_name_tool, get_success_rate_by_domain_name_tool
-from app.llm.classification import get_report_type_from_llm
+from app.tools import (
+    ANALYSIS_TOOLS
+)
+from app.utils.report_type import get_report_type
 from app.utils.sanitization import sanitize_filename
 
 logger = logging.getLogger(__name__)
@@ -15,10 +17,8 @@ logger = logging.getLogger(__name__)
 class AnalyticService:
     """Handles LLM tool selection, execution, chart generation, and interpretation."""
 
-    TOOLS = [
-        get_success_rate_by_file_name_tool,
-        get_success_rate_by_domain_name_tool
-    ]
+    # Use the centralized tool registry
+    TOOLS = ANALYSIS_TOOLS
 
     @staticmethod
     async def process_query(prompt: str, session_id: str = None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -33,8 +33,14 @@ class AnalyticService:
         Returns a dict with keys: success (bool), message (str), chart_image (str base64)
         """
         try:
-            # Detect report type from prompt using LLM
-            report_type = await get_report_type_from_llm(prompt)
+            # Use unified hybrid classification (handles regex + LLM internally)
+            report_type = await get_report_type(prompt)
+            
+            logger.info(f"Detected report type: '{report_type}' for prompt: '{prompt[:50]}...'")
+            
+            # Debug: Double-check the classification
+            if "fail" in prompt.lower() or "failure" in prompt.lower():
+                logger.info(f"Prompt contains failure keywords, report_type should be 'failure' but got '{report_type}'")
 
             # Process the query with the detected report type
             return await AnalyticService.process_query_with_report_type(
@@ -131,7 +137,6 @@ file names or domain names based on the context above. If a reference is unclear
         try:
             # Import here to avoid circular imports
             from .graph_builder import build_app
-            from app.llm.interpretation import get_llm_interpretation
             from app.generators.chart_generator import chart_generator
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -196,11 +201,18 @@ file names or domain names based on the context above. If a reference is unclear
         safe_prompt = sanitize_text_input(prompt, 300)
         messages.append(HumanMessage(content=safe_prompt))
 
-        # Prepare state
+        # Prepare state with enhanced context
+        # Note: Don't pass pre-classified report_type to LLM - let LLM decide based on prompt
         state = {
             "messages": messages,
-            "report_type": report_type,
-            "session_id": session_id
+            "session_id": session_id,
+            
+            # Add processing hints for LLM
+            "processing_context": {
+                "has_reference_context": bool(reference_context),
+                "conversation_length": len(conversation_history or []),
+                "current_date": current_date
+            }
         }
 
         loop = asyncio.get_running_loop()
@@ -236,6 +248,7 @@ Please verify your file or domain references and try again.
         row_count = 0
         date_filter_used = None
         chart_type = "bar"
+        llm_detected_report_type = None  # Track LLM-detected report type
 
         for m in compiled_result.get("messages", []):
             if hasattr(m, 'content') and hasattr(m, '__class__'):
@@ -253,6 +266,12 @@ Please verify your file or domain references and try again.
 
                             if tool_data.get("chart_type_requested"):
                                 chart_type = tool_data.get("chart_type", "bar")
+                                logger.info(f"LLM detected chart_type: {tool_data}")
+
+                            # Extract LLM-detected report type
+                            if tool_data.get("report_type_requested"):
+                                llm_detected_report_type = tool_data.get("report_type")
+                                logger.info(f"LLM detected report_type: {llm_detected_report_type}")
 
                             if tool_data.get("date_filter"):
                                 date_filter_used = tool_data.get("date_filter")
@@ -272,10 +291,40 @@ Please verify your file or domain references and try again.
                                 }
                             if args.get('chart_type'):
                                 chart_type = args.get('chart_type')
+                            
+                            # Extract report_type from tool call arguments
+                            if args.get('report_type'):
+                                llm_detected_report_type = args.get('report_type')
+                                logger.info(f"LLM tool call specified report_type: {llm_detected_report_type}")
 
-        # Filter chart data based on report type
+        # Smart decision logic: prioritize clear pre-classification over ambiguous LLM detection
+        final_report_type = None
+        
+        # If pre-classification is confident (success/failure) but LLM says "both", trust pre-classification
+        if report_type in ["success", "failure"] and llm_detected_report_type == "both":
+            final_report_type = report_type
+            logger.info(f"Override: Pre-classification '{report_type}' overrides LLM 'both' for clear cases")
+        
+        # If LLM has a specific decision (success/failure), use it
+        elif llm_detected_report_type in ["success", "failure"]:
+            final_report_type = llm_detected_report_type
+            logger.info(f"Using LLM-detected specific report_type: {llm_detected_report_type}")
+        
+        # If LLM says "both" and pre-classification agrees or is uncertain, use "both"
+        elif llm_detected_report_type == "both":
+            final_report_type = "both"
+            logger.info(f"Using LLM-detected 'both' report_type")
+        
+        # Fallback to pre-classification
+        else:
+            final_report_type = report_type if report_type != "uncertain" else "both"
+            logger.info(f"Fallback to pre-classified: {report_type}")
+        
+        logger.info(f"Final report_type: {final_report_type} (LLM: {llm_detected_report_type}, Pre-classified: {report_type})")
+
+        # Filter chart data based on final report type
         original_chart_data = chart_data.copy()
-        filtered_chart_data = AnalyticService.filter_chart_data_by_report_type(chart_data, report_type)
+        filtered_chart_data = AnalyticService.filter_chart_data_by_report_type(chart_data, final_report_type)
 
         # Generate chart image if we have data
         chart_image = None
@@ -286,26 +335,34 @@ Please verify your file or domain references and try again.
                     chart_data=filtered_chart_data,
                     chart_type=chart_type,
                     file_name=file_name or domain_name,
-                    report_type=report_type
+                    report_type=final_report_type
                 )
                 chart_generated = True
                 logger.info(f"Generated {chart_type} chart for {file_name or domain_name}")
             except Exception as e:
                 logger.exception(f"Failed to generate chart: {e}")
 
-        # Get LLM interpretation with enhanced context
-        interpretation = await get_llm_interpretation(
-            prompt=prompt,
-            chart_data=filtered_chart_data,
-            original_chart_data=original_chart_data,
-            chart_type=chart_type,
-            chart_generated=chart_generated,
-            file_name=file_name or domain_name,  # Pass domain_name as file_name if no file_name
-            row_count=row_count,
-            report_type=report_type,
-            date_filter_used=date_filter_used,
-            conversation_history=conversation_history
-        )
+        # Extract LLM interpretation from graph results
+        interpretation = None
+        for m in compiled_result.get("messages", []):
+            if hasattr(m, 'content') and hasattr(m, '__class__'):
+                # Get the final AI interpretation message
+                if m.__class__.__name__ == 'AIMessage' and not hasattr(m, 'tool_calls'):
+                    interpretation = m.content
+                    break
+        
+        # Fallback if no interpretation found
+        if not interpretation:
+            from app.utils.formatting import format_basic_message
+            interpretation = format_basic_message(
+                chart_data=filtered_chart_data,
+                file_name=file_name or domain_name,
+                row_count=row_count,
+                chart_type=chart_type,
+                report_type=final_report_type,
+                date_filter_used=date_filter_used,
+                original_chart_data=original_chart_data
+            )
 
         result = {
             "success": True,
@@ -321,6 +378,9 @@ Please verify your file or domain references and try again.
                 "original_chart_data": original_chart_data,
                 "tool_results": tool_results,
                 "chart_type": chart_type,
+                "report_type": final_report_type,
+                "llm_detected_report_type": llm_detected_report_type,
+                "pre_classified_report_type": report_type,
                 "reference_context": reference_context
             })
 

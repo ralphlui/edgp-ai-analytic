@@ -18,6 +18,7 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
 
     # More targeted filtering - preserve core query while blocking injection
     dangerous_patterns = [
+        # Role manipulation and system message overrides
         r'###.*?$(?=\n|$)',  # Section separators with content (multiline)
         r'###.*?(?=\s|$)',  # Section separators with content (single line)
         r'---.*?$(?=\n|$)',  # Dividers with content (multiline)
@@ -28,24 +29,47 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
         r'Assistant:.*?(?=\s|$)',  # Assistant role overrides (single line)
         r'User:.*?$(?=\n|$)',  # User role overrides (multiline)
         r'User:.*?(?=\s|$)',  # User role overrides (single line)
+        r'Human:.*?$(?=\n|$)',  # Human role overrides (multiline)
+        r'Human:.*?(?=\s|$)',  # Human role overrides (single line)
+        r'AI:.*?$(?=\n|$)',  # AI role overrides (multiline)
+        r'AI:.*?(?=\s|$)',  # AI role overrides (single line)
+        
+        # Common injection phrases
         r'Ignore\s+previous.*?$(?=\n|$)',  # Common injection phrase (multiline)
         r'Ignore\s+previous.*?(?=\s|$)',  # Common injection phrase (single line)
         r'Forget\s+previous.*?$(?=\n|$)',  # Common injection phrase (multiline)
         r'Forget\s+previous.*?(?=\s|$)',  # Common injection phrase (single line)
         r'Disregard.*?$(?=\n|$)',  # Common injection phrase (multiline)
         r'Disregard.*?(?=\s|$)',  # Common injection phrase (single line)
+        r'Override.*?$(?=\n|$)',  # Override attempts (multiline)
+        r'Override.*?(?=\s|$)',  # Override attempts (single line)
+        
+        # Role override attempts
         r'You\s+are\s+now.*?$(?=\n|$)',  # Role override attempts (multiline)
         r'You\s+are\s+now.*?(?=\s|$)',  # Role override attempts (single line)
         r'Your\s+role\s+is.*?$(?=\n|$)',  # Role override attempts (multiline)
         r'Your\s+role\s+is.*?(?=\s|$)',  # Role override attempts (single line)
         r'Act\s+as.*?$(?=\n|$)',  # Role override attempts (multiline)
         r'Act\s+as.*?(?=\s|$)',  # Role override attempts (single line)
+        r'Pretend\s+to\s+be.*?$(?=\n|$)',  # Role override attempts (multiline)
+        r'Pretend\s+to\s+be.*?(?=\s|$)',  # Role override attempts (single line)
+        
+        # Command execution attempts
         r'Execute:.*?$(?=\n|$)',  # Direct command execution (multiline)
         r'Execute:.*?(?=\s|$)',  # Direct command execution (single line)
         r'Run:.*?$(?=\n|$)',  # Command execution (multiline)
         r'Run:.*?(?=\s|$)',  # Command execution (single line)
         r'rm\s+-rf.*?$(?=\n|$)',  # Dangerous rm commands (multiline)
         r'rm\s+-rf.*?(?=\s|$)',  # Dangerous rm commands (single line)
+        
+        # Advanced injection techniques
+        r'\[INST\].*?\[/INST\]',  # Instruction templates
+        r'<\|.*?\|>',  # Special token patterns
+        r'\{\{.*?\}\}',  # Template injection patterns
+        r'\\n\\n',  # Encoded newlines
+        r'\\r\\n',  # Encoded carriage returns
+        r'%0A%0A',  # URL encoded newlines
+        r'%0D%0A',  # URL encoded CRLF
     ]
 
     for pattern in dangerous_patterns:
@@ -59,6 +83,12 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
         r'\bformat\b(?!\w)',  # Disk formatting command
         r'\bcmd\b(?!\w)',  # Command prompt
         r'\bpowershell\b(?!\w)',  # PowerShell
+        r'\bsudo\b(?!\w)',  # Unix privilege escalation
+        r'\bsu\b(?!\w)',  # Unix switch user
+        r'\beval\b(?!\w)',  # Code evaluation
+        r'\bexec\b(?!\w)',  # Code execution
+        r'\bimport\b(?!\w)',  # Module imports (could be dangerous)
+        r'\b__import__\b(?!\w)',  # Python import function
     ]
 
     for pattern in single_patterns:
