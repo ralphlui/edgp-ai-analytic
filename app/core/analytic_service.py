@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from app.tools import (
     ANALYSIS_TOOLS
 )
-from app.analysis.classification import get_report_type  # Use new unified function
+from app.utils.report_type import get_report_type
 from app.utils.sanitization import sanitize_filename
 
 logger = logging.getLogger(__name__)
