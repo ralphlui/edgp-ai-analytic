@@ -570,24 +570,29 @@ class DatabaseService:
                 "status_field": status_field
             }
 
-    async def get_customers_per_country(self, org_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_domain_analytics_by_field(self, domain_name: str, group_by_field: str, org_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
         """
-        Get customer count by country from tracker table where domain = 'customer'.
+        Get analytics for any domain grouped by any field from tracker table.
+        
+        This is a flexible method that can analyze any domain (customer, product, order, etc.)
+        and group results by any field (country, category, status, region, etc.).
         
         Args:
+            domain_name: Domain to analyze (e.g., 'customer', 'product', 'vendor', 'location')
+            group_by_field: Field to group by (e.g., 'country', 'category', 'region')  
             org_id: Organization ID for filtering
             start_date: Start date for filtering (YYYY-MM-DD format)
             end_date: End date for filtering (YYYY-MM-DD format)
             
         Returns:
-            Dict with customer counts per country
+            Dict with analytics data grouped by the specified field
         """
         try:
-            # Build filter expression for customer domain
-            filter_expr = boto3.dynamodb.conditions.Attr('domain_name').eq('customer')
+            # Build filter expression for the specified domain
+            filter_expr = boto3.dynamodb.conditions.Attr('domain_name').eq(domain_name)
             filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('organization_id').eq(org_id)
             
-            self.logger.info("Querying customers for org_id: %s", org_id)
+            self.logger.info("Querying %s analytics grouped by %s for org_id: %s", domain_name, group_by_field, org_id)
             
             # Add date filtering if provided
             if start_date:
@@ -601,11 +606,11 @@ class DatabaseService:
             response = self.tracker_table.scan(FilterExpression=filter_expr)
             items = response.get('Items', [])
             
-            self.logger.info("Found %d customer records", len(items))
+            self.logger.info("Found %d %s records", len(items), domain_name)
             
             if len(items) == 0:
                 # Build descriptive message based on filters applied
-                message_parts = ["No customer records found"]
+                message_parts = [f"No {domain_name} records found"]
                 if start_date and end_date:
                     if start_date == end_date:
                         message_parts.append(f"on {start_date}")
@@ -619,8 +624,10 @@ class DatabaseService:
                 return {
                     "success": True,
                     "chart_data": [],
-                    "total_customers": 0,
-                    "countries_found": 0,
+                    "total_records": 0,
+                    "groups_found": 0,
+                    "domain_name": domain_name,
+                    "group_by_field": group_by_field,
                     "message": " ".join(message_parts) + ".",
                     "org_id": org_id,
                     "date_filter": {
@@ -629,55 +636,80 @@ class DatabaseService:
                     }
                 }
             
-            # Count customers by country
-            country_counts = {}
-            total_customers = 0
+            # Count records by the specified grouping field
+            field_counts = {}
+            total_records = 0
+            
+            # Define possible field name variations to try
+            field_variations = [
+                group_by_field,  # exact match
+                f"{domain_name}_{group_by_field}",  # customer_country, product_category
+                f"{group_by_field}_name",  # country_name, category_name
+                f"{group_by_field}s",  # countries, categories (plural)
+                group_by_field.replace('_', ''),  # remove underscores
+                group_by_field.replace('-', '_'),  # replace dashes with underscores
+            ]
             
             for item in items:
-                # Try different possible field names for country information
-                country = None
-                for field in ['country', 'customer_country', 'location', 'region']:
-                    if field in item and item[field]:
-                        country = str(item[field]).strip()
+                # Try different possible field names to find the grouping value
+                group_value = None
+                field_used = None
+                
+                for field_variant in field_variations:
+                    if field_variant in item and item[field_variant]:
+                        group_value = str(item[field_variant]).strip()
+                        field_used = field_variant
                         break
                 
-                if not country:
-                    # If no country field, try to extract from other fields or use "Unknown"
-                    country = "Unknown"
+                if not group_value:
+                    # If no grouping field found, use "Unknown"
+                    group_value = "Unknown"
+                    field_used = "default"
                 
-                country_counts[country] = country_counts.get(country, 0) + 1
-                total_customers += 1
+                field_counts[group_value] = field_counts.get(group_value, 0) + 1
+                total_records += 1
             
             # Convert to chart data format
             chart_data = []
-            for country, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True):
-                percentage = round((count / total_customers) * 100, 2) if total_customers > 0 else 0
+            for group_name, count in sorted(field_counts.items(), key=lambda x: x[1], reverse=True):
+                percentage = round((count / total_records) * 100, 2) if total_records > 0 else 0
                 chart_data.append({
-                    "country": country,
-                    "customer_count": count,
+                    group_by_field: group_name,  # e.g., "country": "Singapore"
+                    f"{domain_name}_count": count,  # e.g., "customer_count": 5
                     "percentage": percentage
                 })
+            
+            self.logger.info("Analytics complete: %d %s records grouped into %d %s groups", 
+                           total_records, domain_name, len(field_counts), group_by_field)
             
             return {
                 "success": True,
                 "chart_data": chart_data,
-                "total_customers": total_customers,
-                "countries_found": len(country_counts),
+                "total_records": total_records,
+                "groups_found": len(field_counts),
+                "domain_name": domain_name,
+                "group_by_field": group_by_field,
                 "chart_type": "bar",
                 "org_id": org_id,
                 "date_filter": {
                     "start_date": start_date,
                     "end_date": end_date
+                },
+                "field_mapping": {
+                    "attempted_fields": field_variations,
+                    "successful_matches": len([item for item in items if any(field in item for field in field_variations)])
                 }
             }
             
         except Exception as e:
-            self.logger.exception("Error getting customers per country")
+            self.logger.exception("Error getting %s analytics by %s", domain_name, group_by_field)
             return {
                 "success": False,
                 "error": str(e),
                 "chart_data": [],
-                "total_customers": 0,
+                "total_records": 0,
+                "domain_name": domain_name,
+                "group_by_field": group_by_field,
                 "org_id": org_id
             }
         

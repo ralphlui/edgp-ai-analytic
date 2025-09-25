@@ -47,20 +47,45 @@ class ChartGenerator:
             if not chart_data:
                 return self._generate_no_data_image(report_type)
             
-            # Extract data - handle both success/failure data and customer analytics data
+            # Extract data - handle both success/failure data and domain analytics data
             statuses = []
             percentages = []
             counts = []
             
-            # Check if this is customer analytics data
-            is_customer_analytics = any('country' in item or 'customer_count' in item for item in chart_data)
+            # Check if this is domain analytics data (flexible format)
+            is_domain_analytics = any(
+                'country' in item or 
+                'customer_count' in item or
+                any(key.endswith('_count') for key in item.keys()) or
+                any(key in ['category', 'region', 'status', 'type', 'location'] for key in item.keys())
+                for item in chart_data
+            )
             
             for item in chart_data:
-                if is_customer_analytics:
-                    # Customer analytics data structure
-                    statuses.append(item.get('country', 'Unknown'))
+                if is_domain_analytics:
+                    # Domain analytics data structure - find the grouping field and count field
+                    grouping_field = None
+                    count_field = None
+                    
+                    # Find the grouping field (country, category, region, etc.)
+                    for key in item.keys():
+                        if key not in ['percentage', 'count'] and not key.endswith('_count'):
+                            if grouping_field is None:
+                                grouping_field = key
+                    
+                    # Find the count field (customer_count, product_count, etc.)
+                    for key in item.keys():
+                        if key.endswith('_count') or key == 'count':
+                            count_field = key
+                            break
+                    
+                    # Use found fields or defaults
+                    group_value = item.get(grouping_field or 'country', 'Unknown')
+                    count_value = item.get(count_field or 'customer_count', 0)
+                    
+                    statuses.append(str(group_value))
                     percentages.append(float(item.get('percentage', 0)))
-                    counts.append(int(item.get('customer_count', 0)))
+                    counts.append(int(count_value))
                 else:
                     # Success/failure data structure
                     statuses.append(item.get('status', '').capitalize())
@@ -89,15 +114,15 @@ class ChartGenerator:
         """Generate a bar chart with appropriate coloring based on report type."""
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        # Check if this is customer analytics data (countries instead of status)
-        is_customer_analytics = any(len(s) == 2 and s.isupper() for s in statuses) or any(s not in ['Success', 'Fail', 'success', 'fail'] for s in statuses)
+        # Check if this is domain analytics data (flexible grouping instead of status)
+        is_domain_analytics = any(s not in ['Success', 'Fail', 'success', 'fail'] for s in statuses) and len(statuses) > 0
         
-        if is_customer_analytics:
-            # Customer analytics - use counts on Y-axis and different colors
+        if is_domain_analytics:
+            # Domain analytics - use counts on Y-axis and different colors
             colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
             bar_colors = [colors[i % len(colors)] for i in range(len(statuses))]
             
-            # Use counts instead of percentages for customer analytics
+            # Use counts instead of percentages for domain analytics
             bars = ax.bar(statuses, counts, color=bar_colors, alpha=0.8, edgecolor='black', linewidth=1.2)
             
             # Add value labels on bars (show customer count)
@@ -107,15 +132,15 @@ class ChartGenerator:
                        f'{count}',
                        ha='center', va='bottom', fontsize=11, fontweight='bold')
             
-            # Customer analytics specific labels
-            ax.set_ylabel('Number of Customers', fontsize=12, fontweight='bold')
-            ax.set_xlabel('Country', fontsize=12, fontweight='bold')
+            # Domain analytics specific labels  
+            ax.set_ylabel('Count', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Groups', fontsize=12, fontweight='bold')
             
-            # Customer analytics title
+            # Domain analytics title
             if title:
                 ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
             else:
-                ax.set_title('Customer Distribution by Country', fontsize=14, fontweight='bold', pad=20)
+                ax.set_title('Data Distribution', fontsize=14, fontweight='bold', pad=20)
                 
         else:
             # Success/failure analytics - original logic

@@ -99,11 +99,21 @@ DOMAIN NAME EXTRACTION:
 ├── If domain_name ends with "_domain", the system will automatically clean it
 └── Examples: "customer_domain" becomes "customer", "product_domain" becomes "product\""""
 
-CUSTOMER_ANALYTICS_INSTRUCTIONS = """
-CUSTOMER ANALYTICS QUERIES:
-├── "How many customers per country?" → Use get_customers_per_country_tool
-├── "Customer distribution by country" → Use get_customers_per_country_tool
-└── These tools query tracker table where domain_name = 'customer' filtered by org_id"""
+DOMAIN_ANALYTICS_INSTRUCTIONS = """
+FLEXIBLE DOMAIN ANALYTICS QUERIES:
+├── For natural language queries with domain + grouping: Use analyze_query_for_domain_analytics_tool
+├── Examples:
+│   ├── "How many customers per country using pie chart?" → Analyzes query automatically
+│   ├── "Show products by category" → Analyzes query automatically  
+│   ├── "Order distribution by region as donut chart" → Analyzes query automatically
+│   ├── "Customer distribution by country" → Analyzes query automatically
+│   └── "Breakdown of users by status" → Analyzes query automatically
+├── For direct queries with known parameters: Use get_domain_analytics_by_field_tool
+├── Examples:
+│   ├── domain_name="customer", group_by_field="country" → Customer distribution by country
+│   ├── domain_name="product", group_by_field="category" → Product distribution by category
+│   └── domain_name="order", group_by_field="region" → Order distribution by region
+└── These tools work with any domain in tracker table filtered by org_id"""
 
 SYSTEM = f"""{SYSTEM_CORE}
 
@@ -115,7 +125,7 @@ SYSTEM = f"""{SYSTEM_CORE}
 
 {DOMAIN_EXTRACTION_INSTRUCTIONS}
 
-{CUSTOMER_ANALYTICS_INSTRUCTIONS}
+{DOMAIN_ANALYTICS_INSTRUCTIONS}
 
 {TOOL_USAGE_GUIDELINES}
 

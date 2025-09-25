@@ -60,9 +60,15 @@ class AnalyticService:
         if report_type == "both":
             return chart_data
 
-        # Check if this is customer analytics data (has 'country' or 'customer_count' fields)
-        if chart_data and any('country' in item or 'customer_count' in item for item in chart_data):
-            # Customer analytics data doesn't need report type filtering
+        # Check if this is domain analytics data (flexible format)
+        if chart_data and any(
+            'country' in item or 
+            'customer_count' in item or
+            any(key.endswith('_count') for key in item.keys()) or
+            any(key in ['category', 'region', 'location', 'type'] for key in item.keys())
+            for item in chart_data
+        ):
+            # Domain analytics data doesn't need report type filtering
             return chart_data
 
         # Apply report type filtering for success/failure data
