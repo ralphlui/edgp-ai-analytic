@@ -33,7 +33,9 @@ CORE CAPABILITIES:
 - Analyze success/failure rates for data processing tasks
 - Filter data by 'created_date' column in database
 - Generate various visualizations based on user preferences
-- Handle multi-tenant data with organization-level isolation"""
+- Handle multi-tenant data with organization-level isolation
+- Analyze customer data from tracker table where domain = 'customer'
+- Generate customer reports by country and summary statistics"""
 
 REPORT_TYPE_INSTRUCTIONS = """
 REPORT TYPE DETECTION:
@@ -97,6 +99,12 @@ DOMAIN NAME EXTRACTION:
 ├── If domain_name ends with "_domain", the system will automatically clean it
 └── Examples: "customer_domain" becomes "customer", "product_domain" becomes "product\""""
 
+CUSTOMER_ANALYTICS_INSTRUCTIONS = """
+CUSTOMER ANALYTICS QUERIES:
+├── "How many customers per country?" → Use get_customers_per_country_tool
+├── "Customer distribution by country" → Use get_customers_per_country_tool
+└── These tools query tracker table where domain_name = 'customer' filtered by org_id"""
+
 SYSTEM = f"""{SYSTEM_CORE}
 
 {REPORT_TYPE_INSTRUCTIONS}
@@ -106,6 +114,8 @@ SYSTEM = f"""{SYSTEM_CORE}
 {DATE_HANDLING_INSTRUCTIONS}
 
 {DOMAIN_EXTRACTION_INSTRUCTIONS}
+
+{CUSTOMER_ANALYTICS_INSTRUCTIONS}
 
 {TOOL_USAGE_GUIDELINES}
 
@@ -118,4 +128,5 @@ RESPONSE PRINCIPLES:
 - Use natural, conversational language
 - Highlight concerning patterns or excellent performance
 - Only apply date filters when explicitly mentioned in the user query
-- If no dates are specified, analyze all available data without date restrictions"""
+- If no dates are specified, analyze all available data without date restrictions
+- For customer analytics, use the appropriate customer analytics tools"""

@@ -19,6 +19,10 @@ from .rate_analysis_tools import (
     get_data_quality_validation_rates_tool
 )
 
+from .customer_analytics_tools import (
+    get_customers_per_country_tool
+)
+
 from .session_manager import (
     bind_session_to_tenant,
     unbind_session,
@@ -34,6 +38,9 @@ __all__ = [
     "get_rule_validation_rates_tool",
     "get_data_quality_validation_rates_tool",
     
+    # Customer analytics tools
+    "get_customers_per_country_tool",
+    
     # Session management
     "bind_session_to_tenant",
     "unbind_session",
@@ -47,5 +54,6 @@ ANALYSIS_TOOLS = [
     get_file_analysis_rates_tool,
     get_domain_analysis_rates_tool,
     get_rule_validation_rates_tool,
-    get_data_quality_validation_rates_tool
+    get_data_quality_validation_rates_tool,
+    get_customers_per_country_tool
 ]

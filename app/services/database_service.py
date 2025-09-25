@@ -569,6 +569,117 @@ class DatabaseService:
                 "file_name": file_name,
                 "status_field": status_field
             }
+
+    async def get_customers_per_country(self, org_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get customer count by country from tracker table where domain = 'customer'.
+        
+        Args:
+            org_id: Organization ID for filtering
+            start_date: Start date for filtering (YYYY-MM-DD format)
+            end_date: End date for filtering (YYYY-MM-DD format)
+            
+        Returns:
+            Dict with customer counts per country
+        """
+        try:
+            # Build filter expression for customer domain
+            filter_expr = boto3.dynamodb.conditions.Attr('domain_name').eq('customer')
+            filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('organization_id').eq(org_id)
+            
+            self.logger.info("Querying customers for org_id: %s", org_id)
+            
+            # Add date filtering if provided
+            if start_date:
+                filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('created_date').gte(start_date)
+                self.logger.debug("Adding start_date filter: %s", start_date)
+            if end_date:
+                filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('created_date').lte(end_date)
+                self.logger.debug("Adding end_date filter: %s", end_date)
+
+            # Query DynamoDB
+            response = self.tracker_table.scan(FilterExpression=filter_expr)
+            items = response.get('Items', [])
+            
+            self.logger.info("Found %d customer records", len(items))
+            
+            if len(items) == 0:
+                # Build descriptive message based on filters applied
+                message_parts = ["No customer records found"]
+                if start_date and end_date:
+                    if start_date == end_date:
+                        message_parts.append(f"on {start_date}")
+                    else:
+                        message_parts.append(f"between {start_date} and {end_date}")
+                elif start_date:
+                    message_parts.append(f"from {start_date} onwards")
+                elif end_date:
+                    message_parts.append(f"until {end_date}")
+                
+                return {
+                    "success": True,
+                    "chart_data": [],
+                    "total_customers": 0,
+                    "countries_found": 0,
+                    "message": " ".join(message_parts) + ".",
+                    "org_id": org_id,
+                    "date_filter": {
+                        "start_date": start_date,
+                        "end_date": end_date
+                    }
+                }
+            
+            # Count customers by country
+            country_counts = {}
+            total_customers = 0
+            
+            for item in items:
+                # Try different possible field names for country information
+                country = None
+                for field in ['country', 'customer_country', 'location', 'region']:
+                    if field in item and item[field]:
+                        country = str(item[field]).strip()
+                        break
+                
+                if not country:
+                    # If no country field, try to extract from other fields or use "Unknown"
+                    country = "Unknown"
+                
+                country_counts[country] = country_counts.get(country, 0) + 1
+                total_customers += 1
+            
+            # Convert to chart data format
+            chart_data = []
+            for country, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True):
+                percentage = round((count / total_customers) * 100, 2) if total_customers > 0 else 0
+                chart_data.append({
+                    "country": country,
+                    "customer_count": count,
+                    "percentage": percentage
+                })
+            
+            return {
+                "success": True,
+                "chart_data": chart_data,
+                "total_customers": total_customers,
+                "countries_found": len(country_counts),
+                "chart_type": "bar",
+                "org_id": org_id,
+                "date_filter": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                }
+            }
+            
+        except Exception as e:
+            self.logger.exception("Error getting customers per country")
+            return {
+                "success": False,
+                "error": str(e),
+                "chart_data": [],
+                "total_customers": 0,
+                "org_id": org_id
+            }
         
     def __init__(self, tracker_table_name: str = "MasterDataTaskTrackerSIT", header_table_name: str = "MasterDataHeaderSIT"):
         self.dynamodb = boto3.resource(

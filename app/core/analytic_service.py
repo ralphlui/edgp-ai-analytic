@@ -60,6 +60,12 @@ class AnalyticService:
         if report_type == "both":
             return chart_data
 
+        # Check if this is customer analytics data (has 'country' or 'customer_count' fields)
+        if chart_data and any('country' in item or 'customer_count' in item for item in chart_data):
+            # Customer analytics data doesn't need report type filtering
+            return chart_data
+
+        # Apply report type filtering for success/failure data
         filtered_data = []
         for item in chart_data:
             status = item.get('status', '').lower()

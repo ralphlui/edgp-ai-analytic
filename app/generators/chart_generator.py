@@ -47,15 +47,25 @@ class ChartGenerator:
             if not chart_data:
                 return self._generate_no_data_image(report_type)
             
-            # Extract data
+            # Extract data - handle both success/failure data and customer analytics data
             statuses = []
             percentages = []
             counts = []
             
+            # Check if this is customer analytics data
+            is_customer_analytics = any('country' in item or 'customer_count' in item for item in chart_data)
+            
             for item in chart_data:
-                statuses.append(item.get('status', '').capitalize())
-                percentages.append(float(item.get('percentage', 0)))
-                counts.append(int(item.get('count', 0)))
+                if is_customer_analytics:
+                    # Customer analytics data structure
+                    statuses.append(item.get('country', 'Unknown'))
+                    percentages.append(float(item.get('percentage', 0)))
+                    counts.append(int(item.get('customer_count', 0)))
+                else:
+                    # Success/failure data structure
+                    statuses.append(item.get('status', '').capitalize())
+                    percentages.append(float(item.get('percentage', 0)))
+                    counts.append(int(item.get('count', 0)))
             
             # Generate chart based on type
             if chart_type.lower() == "pie":
@@ -79,37 +89,67 @@ class ChartGenerator:
         """Generate a bar chart with appropriate coloring based on report type."""
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        # Determine colors based on report type and status
-        colors = []
-        for s in statuses:
-            if report_type == "success":
-                colors.append('#28a745')  # Green for success only
-            elif report_type == "failure":
-                colors.append('#dc3545')  # Red for failure only
+        # Check if this is customer analytics data (countries instead of status)
+        is_customer_analytics = any(len(s) == 2 and s.isupper() for s in statuses) or any(s not in ['Success', 'Fail', 'success', 'fail'] for s in statuses)
+        
+        if is_customer_analytics:
+            # Customer analytics - use counts on Y-axis and different colors
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+            bar_colors = [colors[i % len(colors)] for i in range(len(statuses))]
+            
+            # Use counts instead of percentages for customer analytics
+            bars = ax.bar(statuses, counts, color=bar_colors, alpha=0.8, edgecolor='black', linewidth=1.2)
+            
+            # Add value labels on bars (show customer count)
+            for bar, count in zip(bars, counts):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{count}',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Customer analytics specific labels
+            ax.set_ylabel('Number of Customers', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Country', fontsize=12, fontweight='bold')
+            
+            # Customer analytics title
+            if title:
+                ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
             else:
-                # Both - use appropriate colors
-                colors.append('#28a745' if s.lower() == 'success' else '#dc3545')
-        
-        # Create bars
-        bars = ax.bar(statuses, percentages, color=colors, alpha=0.8, edgecolor='black', linewidth=1.2)
-        
-        # Add value labels on bars
-        for bar, percentage, count in zip(bars, percentages, counts):
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{percentage:.1f}%\n({count})',
-                   ha='center', va='bottom', fontsize=11, fontweight='bold')
-        
-        # Customize chart
-        ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
-        ax.set_xlabel('Status', fontsize=12, fontweight='bold')
-        
-        # Set title based on report type
-        if title:
-            ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+                ax.set_title('Customer Distribution by Country', fontsize=14, fontweight='bold', pad=20)
+                
         else:
-            title_text = self._get_title_text(report_type, file_name)
-            ax.set_title(title_text, fontsize=14, fontweight='bold', pad=20)
+            # Success/failure analytics - original logic
+            # Determine colors based on report type and status
+            colors = []
+            for s in statuses:
+                if report_type == "success":
+                    colors.append('#28a745')  # Green for success only
+                elif report_type == "failure":
+                    colors.append('#dc3545')  # Red for failure only
+                else:
+                    # Both - use appropriate colors
+                    colors.append('#28a745' if s.lower() == 'success' else '#dc3545')
+            
+            # Create bars with percentages
+            bars = ax.bar(statuses, percentages, color=colors, alpha=0.8, edgecolor='black', linewidth=1.2)
+            
+            # Add value labels on bars
+            for bar, percentage, count in zip(bars, percentages, counts):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{percentage:.1f}%\n({count})',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Success/failure specific labels
+            ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+            ax.set_xlabel('Status', fontsize=12, fontweight='bold')
+            
+            # Set title based on report type
+            if title:
+                ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
+            else:
+                title_text = self._get_title_text(report_type, file_name)
+                ax.set_title(title_text, fontsize=14, fontweight='bold', pad=20)
         
         # Set y-axis limit
         if report_type != "both" and percentages:
