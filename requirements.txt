@@ -13,3 +13,6 @@ httpx
 tiktoken
 langsmith
 python-dateutil
+pytest
+pytest-asyncio
+pytest-mock
