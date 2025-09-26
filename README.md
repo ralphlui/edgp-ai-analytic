@@ -98,9 +98,7 @@ curl -X POST "http://localhost:8000/query" \
   -H "Authorization: Bearer your_jwt_token" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Show me customer success rate by country as pie chart",
-    "session_id": "user123",
-    "org_id": "org456"
+    "query": "Show me customer success rate by country as pie chart"
   }'
 ```
 
@@ -112,10 +110,7 @@ curl -X POST "http://localhost:8000/query" \
 ### **Request Format**
 ```json
 {
-  "query": "Show customer analytics by country as pie chart",
-  "session_id": "unique_session_id", 
-  "org_id": "organization_id",
-  "conversation_history": []
+  "query": "Show customer analytics by country as pie chart"
 }
 ```
 
@@ -124,11 +119,7 @@ curl -X POST "http://localhost:8000/query" \
 {
   "success": true,
   "message": "Analysis complete. Found 150 customers across 5 countries.",
-  "chart_image": "base64_encoded_chart_image",
-  "session_id": "unique_session_id",
-  "domain_name": "customer",
-  "report_type": "both",
-  "row_count": 150
+  "chart_image": "base64_encoded_chart_image"
 }
 ```
 
@@ -248,25 +239,6 @@ edgp-ai-analytic/
 uvicorn app.analytic_api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### **Production**
-```bash
-# With Gunicorn (recommended)
-pip install gunicorn
-gunicorn app.analytic_api:app -w 4 -k uvicorn.workers.UvicornWorker
-
-# Direct Uvicorn
-uvicorn app.analytic_api:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-### **Docker** (Optional)
-```dockerfile
-FROM python:3.13-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["uvicorn", "app.analytic_api:app", "--host", "0.0.0.0", "--port", "8000"]
-```
 
 ## 🐛 Troubleshooting
 
