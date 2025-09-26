@@ -33,7 +33,9 @@ CORE CAPABILITIES:
 - Analyze success/failure rates for data processing tasks
 - Filter data by 'created_date' column in database
 - Generate various visualizations based on user preferences
-- Handle multi-tenant data with organization-level isolation"""
+- Handle multi-tenant data with organization-level isolation
+- Analyze customer data from tracker table where domain = 'customer'
+- Generate customer reports by country and summary statistics"""
 
 REPORT_TYPE_INSTRUCTIONS = """
 REPORT TYPE DETECTION:
@@ -97,6 +99,22 @@ DOMAIN NAME EXTRACTION:
 ├── If domain_name ends with "_domain", the system will automatically clean it
 └── Examples: "customer_domain" becomes "customer", "product_domain" becomes "product\""""
 
+DOMAIN_ANALYTICS_INSTRUCTIONS = """
+FLEXIBLE DOMAIN ANALYTICS QUERIES:
+├── For natural language queries with domain + grouping: Use analyze_query_for_domain_analytics_tool
+├── Examples:
+│   ├── "How many customers per country using pie chart?" → Analyzes query automatically
+│   ├── "Show products by category" → Analyzes query automatically  
+│   ├── "Order distribution by region as donut chart" → Analyzes query automatically
+│   ├── "Customer distribution by country" → Analyzes query automatically
+│   └── "Breakdown of users by status" → Analyzes query automatically
+├── For direct queries with known parameters: Use get_domain_analytics_by_field_tool
+├── Examples:
+│   ├── domain_name="customer", group_by_field="country" → Customer distribution by country
+│   ├── domain_name="product", group_by_field="category" → Product distribution by category
+│   └── domain_name="order", group_by_field="region" → Order distribution by region
+└── These tools work with any domain in tracker table filtered by org_id"""
+
 SYSTEM = f"""{SYSTEM_CORE}
 
 {REPORT_TYPE_INSTRUCTIONS}
@@ -106,6 +124,8 @@ SYSTEM = f"""{SYSTEM_CORE}
 {DATE_HANDLING_INSTRUCTIONS}
 
 {DOMAIN_EXTRACTION_INSTRUCTIONS}
+
+{DOMAIN_ANALYTICS_INSTRUCTIONS}
 
 {TOOL_USAGE_GUIDELINES}
 
@@ -118,4 +138,5 @@ RESPONSE PRINCIPLES:
 - Use natural, conversational language
 - Highlight concerning patterns or excellent performance
 - Only apply date filters when explicitly mentioned in the user query
-- If no dates are specified, analyze all available data without date restrictions"""
+- If no dates are specified, analyze all available data without date restrictions
+- For customer analytics, use the appropriate customer analytics tools"""
