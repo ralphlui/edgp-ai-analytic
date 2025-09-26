@@ -153,7 +153,7 @@ file names or domain names based on the context above. If a reference is unclear
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
             from datetime import date
-            from app.services.memory_service import memory_service
+            from app.services.memory import memory_service
 
             logger.info(f"Processing prompt: '{prompt[:100]}...'")
             logger.info(f"Report type: '{report_type}'")
@@ -334,8 +334,10 @@ Please verify your file or domain references and try again.
         
         logger.info(f"Final report_type: {final_report_type} (LLM: {llm_detected_report_type}, Pre-classified: {report_type})")
 
-        # Filter chart data based on final report type
-        original_chart_data = chart_data.copy()
+        # Filter chart data based on final report type  
+        # Store original only if debug mode is enabled to save memory
+        from app.config import DEBUG
+        original_chart_data = chart_data.copy() if DEBUG else None
         filtered_chart_data = AnalyticService.filter_chart_data_by_report_type(chart_data, final_report_type)
 
         # Generate chart image if we have data
@@ -382,9 +384,9 @@ Please verify your file or domain references and try again.
             "chart_image": chart_image
         }
 
-        # Add debug data if enabled
+        # Add debug data if enabled (avoid storing large data in production)
         from app.config import DEBUG
-        if DEBUG:
+        if DEBUG and original_chart_data is not None:
             result.update({
                 "chart_data": filtered_chart_data,
                 "original_chart_data": original_chart_data,

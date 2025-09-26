@@ -23,6 +23,10 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Maximum number of assistant->tool cycles before we force-stop the agent
 MAX_AGENT_LOOPS = 10
 
+# Redis configuration for session storage
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
+
 # System prompt components
 SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}

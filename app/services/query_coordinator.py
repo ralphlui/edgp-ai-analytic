@@ -3,14 +3,14 @@ Enhanced query coordinator with simplified reference resolution and improved sec
 """
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
 
 from app.core.analytic_service import AnalyticService
-from app.services.memory_service import memory_service
+from app.services.memory import memory_service, memory_manager, RedisSessionStorage
 from app.auth import validate_user_profile_with_response
 from app.utils.sanitization import sanitize_text_input
 from app.utils.request_context import (
@@ -18,6 +18,7 @@ from app.utils.request_context import (
     reset_tenant_context
 )
 from app.tools import bind_session_to_tenant, unbind_session
+from app.config import USE_REDIS_SESSIONS, REDIS_URL
 
 # Constants
 SESSION_COOKIE_MAX_AGE = 3600
@@ -59,10 +60,29 @@ class QueryCoordinator:
     """
     Simplified coordinator that focuses on security and delegates 
     reference resolution to memory service and LLM.
+    Now with optional Redis session storage for production scalability.
     """
 
-    def __init__(self):
+    def __init__(self, redis_url: str = None):
         self._analytic_service = AnalyticService()
+        
+        # Initialize session storage based on configuration flag
+        if USE_REDIS_SESSIONS:
+            self.redis_storage = RedisSessionStorage(redis_url or REDIS_URL)
+            if self.redis_storage.available:
+                logger.info("QueryCoordinator initialized with Redis session storage (USE_REDIS_SESSIONS=true)")
+            else:
+                logger.warning("USE_REDIS_SESSIONS=true but Redis unavailable, falling back to memory")
+        else:
+            self.redis_storage = None
+            logger.info("QueryCoordinator initialized with memory session storage (USE_REDIS_SESSIONS=false)")
+    
+    def _get_session_storage(self):
+        """Get the appropriate session storage based on config flag and Redis availability."""
+        if USE_REDIS_SESSIONS and self.redis_storage and self.redis_storage.available:
+            return self.redis_storage
+        else:
+            return memory_service
 
     async def process_query(
         self,
@@ -111,17 +131,27 @@ class QueryCoordinator:
                 raise ValueError("Failed to bind session to tenant")
 
             # 5) Get conversation history
-            conversation_history = memory_service.get_conversation_history(session_id)
+            session_storage = self._get_session_storage()
+            if hasattr(session_storage, 'get_session'):
+                # Using Redis storage
+                session_data = session_storage.get_session(session_id)
+                conversation_history = session_data.get("interactions", []) if session_data else []
+            else:
+                # Using memory storage
+                conversation_history = session_storage.get_conversation_history(session_id)
 
             # 6) SECURITY: Sanitize user input to prevent prompt injection
             safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
             logger.debug(f"Sanitized prompt for session {session_id[:8]}...")
 
             # 7) SIMPLIFIED: Extract explicit references from sanitized prompt
-            memory_service.extract_and_store_references(session_id, safe_prompt)
+            session_storage = self._get_session_storage()
+            if hasattr(session_storage, 'extract_and_store_references'):
+                # Using memory storage
+                session_storage.extract_and_store_references(session_id, safe_prompt)
+            # For Redis storage, we'll handle reference extraction differently
 
-            # 8) SIMPLIFIED: Basic reference resolution (only explicit cases)
-            #processed_prompt = memory_service.simple_reference_resolution(session_id, safe_prompt)
+           
 
             # 9) Set session cookie
             self._set_session_cookie(response, session_id)
@@ -163,6 +193,7 @@ class QueryCoordinator:
             if session_id:
                 unbind_session(session_id)
                 logger.debug(f"Cleaned up session {session_id[:8]}...")
+                
 
     async def _resolve_secure_session_id(
         self, 
@@ -170,7 +201,7 @@ class QueryCoordinator:
         http_request: Request, 
         user_id: str
     ) -> str:
-        """Resolve and validate secure session ID."""
+        """Resolve and validate secure session ID with Redis or memory storage."""
         # Check for existing session cookie
         session_id = http_request.cookies.get("analytic_session_id")
         
@@ -181,10 +212,33 @@ class QueryCoordinator:
         else:
             logger.debug(f"Using existing session: {session_id[:8]}...")
         
-        # Ensure session exists in memory
-        if session_id not in memory_service.sessions:
-            memory_service.create_session(user_id)
-            logger.info(f"Created memory session for {session_id[:8]}...")
+        # Ensure session exists using appropriate storage
+        session_storage = self._get_session_storage()
+        
+        if hasattr(session_storage, 'get_session'):
+            # Using Redis storage
+            session_data = session_storage.get_session(session_id)
+            if not session_data:
+                new_session_id = session_storage.create_session(user_id)
+                session_id = new_session_id
+                logger.info(f"Created Redis session for {session_id[:8]}...")
+            else:
+                # Reset TTL on each interaction to keep active sessions alive
+                session_storage.touch_session(session_id)
+                logger.debug(f"Found existing Redis session for {session_id[:8]}...")
+        else:
+            # Using memory storage (fallback)
+            session_context = session_storage.get_session_context(session_id)
+            if not session_context:
+                created_session_id = session_storage.create_session(user_id)
+                if created_session_id != session_id:
+                    session_id = created_session_id
+                logger.info(f"Created memory session for {session_id[:8]}...")
+            else:
+                # Reset TTL on each interaction (matching Redis behavior)
+                if hasattr(session_storage, 'touch_session'):
+                    session_storage.touch_session(session_id)
+                logger.debug(f"Found existing memory session context for {session_id[:8]}...")
         
         return session_id
     
@@ -219,11 +273,59 @@ class QueryCoordinator:
         original_prompt: str, 
         result: Dict[str, Any]
     ) -> None:
-        """Store interaction result in memory service."""
+        """Store interaction result using Redis or memory storage."""
         try:
             tool_name = result.get("tool_name", "analytic_query")
-            memory_service.store_interaction(session_id, original_prompt, tool_name, result)
-            logger.debug(f"Stored interaction for session {session_id[:8]}...")
+            session_storage = self._get_session_storage()
+            
+            if hasattr(session_storage, 'get_session'):
+                # Using Redis storage - need to implement interaction storage
+                session_data = session_storage.get_session(session_id)
+                if session_data:
+                    # Add interaction to session data
+                    interaction = {
+                        "timestamp": time.time(),
+                        "user_prompt": original_prompt,
+                        "tool_used": tool_name,
+                        "response_summary": {
+                            "success": result.get("success", False),
+                            "tool": result.get("tool"),
+                            "file_name": result.get("file_name"),
+                            "domain_name": result.get("domain_name"),
+                            "row_count": result.get("row_count", 0),
+                            "report_type": result.get("report_type", "both"),
+                            "message": result.get("message", "")[:200]  # Truncate
+                        }
+                    }
+                    
+                    # Maintain history limit (10 interactions)
+                    interactions = session_data.get("interactions", [])
+                    interactions.append(interaction)
+                    if len(interactions) > 10:
+                        interactions.pop(0)
+                    
+                    session_data["interactions"] = interactions
+                    session_storage.update_session(session_id, session_data)
+                    logger.debug(f"Stored interaction in Redis for session {session_id[:8]}...")
+                else:
+                    logger.warning(f"Session {session_id[:8]} not found in Redis for interaction storage")
+            else:
+                # Using memory storage
+                session_storage.store_interaction(session_id, original_prompt, tool_name, result)
+                logger.debug(f"Stored interaction in memory for session {session_id[:8]}...")
+            
+            # Update memory stats for monitoring (regardless of storage type)
+            stats = memory_manager.get_memory_stats()
+            storage = self._get_session_storage()
+            if hasattr(storage, 'available') and storage.available:
+                # For Redis, get session info (no expensive cleanup needed)
+                redis_info = storage.get_session_info()
+                session_count = redis_info.get("total_sessions", 0)
+                if session_count > 500:
+                    logger.warning(f"High Redis session count: {session_count} sessions active")
+            elif stats["total_sessions"] > 500:
+                logger.warning(f"High memory session count: {stats['total_sessions']} sessions active")
+                
         except Exception as e:
             logger.warning(f"Failed to store interaction: {e}")
 
