@@ -14,6 +14,54 @@ from app.utils.context import extract_context_insights, get_conversation_context
 logger = logging.getLogger(__name__)
 
 
+def clean_message_sequence(messages):
+    """
+    Clean message sequence to remove incomplete tool call sequences that cause API errors.
+    Removes any AIMessage with tool_calls that don't have corresponding ToolMessages.
+    """
+    cleaned_messages = []
+    i = 0
+    
+    while i < len(messages):
+        msg = messages[i]
+        
+        if isinstance(msg, AIMessage) and hasattr(msg, 'tool_calls') and msg.tool_calls:
+            # This AI message has tool calls - check if they have responses
+            tool_call_ids = set()
+            for tc in msg.tool_calls:
+                if isinstance(tc, dict) and 'id' in tc:
+                    tool_call_ids.add(tc['id'])
+                elif hasattr(tc, 'id'):
+                    tool_call_ids.add(tc.id)
+            
+            # Look ahead to find corresponding tool messages
+            j = i + 1
+            found_tool_responses = set()
+            
+            while j < len(messages) and isinstance(messages[j], ToolMessage):
+                tool_msg = messages[j]
+                if hasattr(tool_msg, 'tool_call_id'):
+                    found_tool_responses.add(tool_msg.tool_call_id)
+                j += 1
+            
+            # Only include this AI message if all tool calls have responses
+            if tool_call_ids.issubset(found_tool_responses):
+                cleaned_messages.append(msg)
+                # Add the corresponding tool messages
+                for k in range(i + 1, j):
+                    if isinstance(messages[k], ToolMessage):
+                        cleaned_messages.append(messages[k])
+                i = j
+            else:
+                logger.warning(f"Removing AI message with incomplete tool calls: {tool_call_ids - found_tool_responses}")
+                i += 1
+        else:
+            cleaned_messages.append(msg)
+            i += 1
+    
+    return cleaned_messages
+
+
 def build_app():
     """
     Build the LangGraph application for analytic processing.
@@ -30,6 +78,10 @@ def build_app():
 
     def assistant(state: MessagesState):
         messages = state["messages"]
+        
+        # Clean message sequence to prevent tool_call mismatch errors
+        messages = clean_message_sequence(messages)
+        logger.info(f"Cleaned message sequence: {len(messages)} messages")
 
         # Enhanced loop protection with context awareness
         loop_count = state.get("_loop_count", 0)
@@ -44,6 +96,11 @@ def build_app():
         state["_loop_count"] = loop_count + 1
 
         try:
+            # Validate message sequence to prevent tool_call mismatch errors
+            logger.info(f"Processing {len(messages)} messages")
+            for i, msg in enumerate(messages):
+                logger.debug(f"Message {i}: {type(msg).__name__} - {'has tool_calls' if hasattr(msg, 'tool_calls') and msg.tool_calls else 'no tool_calls'}")
+
             # Process tool results with enhanced interpretation
             has_tool_results = False
             tool_results = []
@@ -53,7 +110,7 @@ def build_app():
                 if isinstance(msg, ToolMessage):
                     has_tool_results = True
                     try:
-                        print(f"Tool message content: {msg}")
+                        logger.debug(f"Processing tool message: {msg.tool_call_id}")
                         tool_data = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
                         tool_results.append(tool_data)
 
@@ -72,19 +129,54 @@ def build_app():
                     logger.info(f"Messages to assistant tool_result: {tool_results}")
                     conversation_context = get_conversation_context(messages)
 
-                    # Create enhanced interpretation prompt
+                    # Validate inputs before calling LLM
+                    if not tool_results:
+                        raise ValueError("Empty tool_results")
+                    
+                    # Create enhanced interpretation prompt with error handling
+                    try:
+                        interpretation_prompt = create_interpretation_prompt(tool_results, context_insights)
+                        logger.info(f"Interpretation prompt length: {len(interpretation_prompt) if interpretation_prompt else 0}")
+                        if not interpretation_prompt or len(interpretation_prompt.strip()) == 0:
+                            raise ValueError("Empty interpretation prompt generated")
+                    except Exception as prompt_error:
+                        logger.error(f"Failed to create interpretation prompt: {prompt_error}")
+                        raise prompt_error
+
+                    # Create fresh message sequence for interpretation to avoid tool_call mismatch
+                    # Only include the system message and the interpretation prompt
                     interpretation_messages = [
                         SystemMessage(content=SYSTEM),
-                        *conversation_context,
-                        HumanMessage(content=create_interpretation_prompt(tool_results, context_insights))
+                        HumanMessage(content=interpretation_prompt)
                     ]
+                    
+                    # Validate message structure
+                    total_length = sum(len(str(msg.content)) for msg in interpretation_messages)
+                    logger.info(f"Total message length: {total_length} characters")
+                    
+                    if total_length > 100000:  # ~25k tokens rough estimate
+                        logger.warning(f"Message might be too long for API: {total_length} chars")
 
-                    # Use LLM for intelligent interpretation
-                    interpretation_response = llm.invoke(interpretation_messages)
-                    return {"interpretation_response": [interpretation_response]}
+                    # Use LLM for intelligent interpretation without tool binding to avoid tool_call issues
+                    interpretation_llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
+                    interpretation_response = interpretation_llm.invoke(interpretation_messages)
+                    logger.info(f"Interpretation response: {interpretation_response}")
+                    return {"messages": [interpretation_response]}
 
                 except Exception as e:
                     logger.error(f"Interpretation failed: {e}")
+                    logger.error(f"Error type: {type(e)}")
+                    
+                    # Log more details for debugging
+                    if hasattr(e, 'response'):
+                        logger.error(f"API response status: {getattr(e.response, 'status_code', 'Unknown')}")
+                    if hasattr(e, 'body'):
+                        logger.error(f"API error body: {e.body}")
+                    
+                    # Log the data that caused the failure
+                    logger.error(f"Tool results count: {len(tool_results)}")
+                    logger.error(f"Context insights count: {len(context_insights)}")
+                    
                     # Fallback to basic formatting with correct parameters
                     # Extract parameters from tool_results for fallback
                     file_name = None
@@ -117,7 +209,7 @@ def build_app():
 
             # Handle initial queries and follow-ups without tool results
             elif not has_tool_results:
-                # Add system prompt to ensure consistent behavior
+                # Add system prompt to ensure consistent behavior and use cleaned messages
                 enhanced_messages = [SystemMessage(content=SYSTEM)] + list(messages)
                 response = llm.invoke(enhanced_messages)
                 logger.info(f"First initial call llm response: {response}")

@@ -381,14 +381,6 @@ Please verify your file or domain references and try again.
                 original_chart_data=original_chart_data
             )
 
-            #   "tool": result.get("tool"),
-            #                 "file_name": result.get("file_name"),
-            #                 "domain_name": result.get("domain_name"),
-            #                 "row_count": result.get("row_count", 0),
-            #                 "report_type": result.get("report_type", "both"),
-            #                 "message": result.get("message", "")[:200]
-
-
 
         result = {
             "success": True,
@@ -397,8 +389,7 @@ Please verify your file or domain references and try again.
             "file_name": file_name,
             "domain_name": domain_name,
             "row_count": row_count,
-            "report_type": final_report_type,
-            "tool":""
+            "report_type": final_report_type
         }
 
 
