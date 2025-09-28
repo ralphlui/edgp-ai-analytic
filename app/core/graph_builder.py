@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, SystemMessage, HumanMessage, ToolMessage
 from langgraph.graph import StateGraph, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
-from app.config import OPENAI_MODEL, USE_LLM, SYSTEM, MAX_AGENT_LOOPS
+from app.config import OPENAI_MODEL, USE_LLM, SYSTEM, MAX_AGENT_LOOPS, OPENAI_API_KEY
 from app.utils.formatting import format_error_message, format_basic_message
 from app.utils.context import extract_context_insights, get_conversation_context, create_interpretation_prompt
 
@@ -72,7 +72,7 @@ def build_app():
     # Import AnalyticsService here to avoid circular imports
     from app.core.analytic_service import AnalyticService
 
-    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0).bind_tools(AnalyticService.TOOLS)
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY).bind_tools(AnalyticService.TOOLS)
 
     graph = StateGraph(MessagesState)
 
@@ -158,7 +158,7 @@ def build_app():
                         logger.warning(f"Message might be too long for API: {total_length} chars")
 
                     # Use LLM for intelligent interpretation without tool binding to avoid tool_call issues
-                    interpretation_llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0)
+                    interpretation_llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
                     interpretation_response = interpretation_llm.invoke(interpretation_messages)
                     logger.info(f"Interpretation response: {interpretation_response}")
                     return {"messages": [interpretation_response]}

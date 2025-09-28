@@ -36,7 +36,44 @@ def load_environment_config():
 # Load environment-specific configuration
 load_environment_config()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+
+# AWS Secrets Manager integration (conditional)
+USE_SECRETS_MANAGER: bool = os.getenv('USE_SECRETS_MANAGER', 'true').lower() == 'true'
+
+if USE_SECRETS_MANAGER:
+    try:
+        from app.services.aws_secrets import get_jwt_public_key, get_openai_api_key, get_secrets_manager
+        
+        secrets_manager = get_secrets_manager()
+        
+        if secrets_manager.available:
+            # Retrieve secrets from AWS Secrets Manager with environment variable fallbacks
+            OPENAI_API_KEY = get_openai_api_key(os.getenv("OPENAI_API_KEY"))
+            JWT_SECRET_KEY = get_jwt_public_key(os.getenv("JWT_SECRET_KEY"))
+            
+            print(f"🔐 AWS Secrets Manager: Connected - Using secure secrets from region {secrets_manager.region_name}")
+        else:
+            # Fall back to environment variables
+            OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+            JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+            print("⚠️  AWS Secrets Manager: Unavailable - Using environment variables")
+            
+    except ImportError as e:
+        print(f"⚠️  AWS Secrets Manager import failed: {e} - Using environment variables")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    except Exception as e:
+        print(f"⚠️  AWS Secrets Manager initialization failed: {e} - Using environment variables")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+else:
+    # Use environment variables only
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    print("🔧 AWS Secrets Manager: Disabled - Using environment variables only")
+
+# Other configuration variables
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 USE_LLM = bool(OPENAI_API_KEY)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -44,17 +81,14 @@ AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 # default to ap-southeast-1 if not provided
 AWS_DEFAULT_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 
-# dynamo db table names
+# DynamoDB table names
 DYNAMODB_TRACKER_TABLE_NAME = os.getenv("DYNAMODB_TRACKER_TABLE_NAME")
 DYNAMODB_HEADER_TABLE_NAME = os.getenv("DYNAMODB_HEADER_TABLE_NAME")
-
-USE_SECRETS_MANAGER: bool = os.getenv('USE_SECRETS_MANAGER', 'true').lower() == 'true'
 
 # Admin API configuration
 ADMIN_API_BASE_URL = os.getenv("ADMIN_URL")
 
 # JWT configuration
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "RS256")
 
 # Enable verbose debug outputs when set to '1'
