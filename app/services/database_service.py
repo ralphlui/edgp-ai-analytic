@@ -1,7 +1,7 @@
 import boto3
 import logging
 from typing import Dict, Any, Optional
-from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION, DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME
 
 class DatabaseService:
     logger = logging.getLogger("database_service")
@@ -712,16 +712,16 @@ class DatabaseService:
                 "group_by_field": group_by_field,
                 "org_id": org_id
             }
-        
-    def __init__(self, tracker_table_name: str = "MasterDataTaskTrackerSIT", header_table_name: str = "MasterDataHeaderSIT"):
+
+    def __init__(self):
         self.dynamodb = boto3.resource(
             'dynamodb',
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
             region_name=AWS_DEFAULT_REGION
         )
-        self.tracker_table = self.dynamodb.Table(tracker_table_name)
-        self.header_table = self.dynamodb.Table(header_table_name)
+        self.tracker_table = self.dynamodb.Table(DYNAMODB_TRACKER_TABLE_NAME)
+        self.header_table = self.dynamodb.Table(DYNAMODB_HEADER_TABLE_NAME)
 
 # Initialize database service
 db_service = DatabaseService()    

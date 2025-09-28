@@ -1,6 +1,40 @@
 import os
 from dotenv import load_dotenv
-load_dotenv()
+
+def load_environment_config():
+    """
+    Load environment-specific configuration based on ENV variable.
+    
+    Environment files priority:
+    1. ENVIRONMENT=production → .env.production
+    2. ENVIRONMENT=sit → .env.sit
+    3. ENVIRONMENT=development → .env
+    4. Default → .env
+    """
+    env = os.getenv('ENVIRONMENT', 'development').lower()
+    
+    # Environment file mapping
+    env_files = {
+        'production': '.env.production',
+        'sit': '.env.sit',
+        'development': '.env',
+    }
+    
+    # Load the appropriate .env file
+    env_file = env_files.get(env, '.env')
+    
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+        print(f"🔧 Loaded configuration from: {env_file}")
+    else:
+        # Fallback to default .env
+        load_dotenv()
+        print(f"⚠️  Environment file {env_file} not found, using default .env")
+        if env != 'development':
+            print(f"💡 Create {env_file} for {env} environment configuration")
+
+# Load environment-specific configuration
+load_environment_config()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -8,10 +42,16 @@ USE_LLM = bool(OPENAI_API_KEY)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 # default to ap-southeast-1 if not provided
-AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "ap-southeast-1")
+AWS_DEFAULT_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+
+# dynamo db table names
+DYNAMODB_TRACKER_TABLE_NAME = os.getenv("DYNAMODB_TRACKER_TABLE_NAME")
+DYNAMODB_HEADER_TABLE_NAME = os.getenv("DYNAMODB_HEADER_TABLE_NAME")
+
+USE_SECRETS_MANAGER: bool = os.getenv('USE_SECRETS_MANAGER', 'true').lower() == 'true'
 
 # Admin API configuration
-ADMIN_API_BASE_URL = os.getenv("ADMIN_API_BASE_URL")
+ADMIN_API_BASE_URL = os.getenv("ADMIN_URL")
 
 # JWT configuration
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
@@ -24,7 +64,7 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 MAX_AGENT_LOOPS = 10
 
 # Redis configuration for session storage
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
 USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
 
 # Session Management Configuration
