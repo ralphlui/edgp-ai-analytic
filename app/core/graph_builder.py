@@ -53,6 +53,7 @@ def build_app():
                 if isinstance(msg, ToolMessage):
                     has_tool_results = True
                     try:
+                        print(f"Tool message content: {msg}")
                         tool_data = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
                         tool_results.append(tool_data)
 
@@ -68,6 +69,7 @@ def build_app():
             if has_tool_results and tool_results:
                 try:
                     # Get conversation history for context
+                    logger.info(f"Messages to assistant tool_result: {tool_results}")
                     conversation_context = get_conversation_context(messages)
 
                     # Create enhanced interpretation prompt
@@ -79,7 +81,7 @@ def build_app():
 
                     # Use LLM for intelligent interpretation
                     interpretation_response = llm.invoke(interpretation_messages)
-                    return {"messages": [interpretation_response]}
+                    return {"interpretation_response": [interpretation_response]}
 
                 except Exception as e:
                     logger.error(f"Interpretation failed: {e}")
@@ -118,6 +120,7 @@ def build_app():
                 # Add system prompt to ensure consistent behavior
                 enhanced_messages = [SystemMessage(content=SYSTEM)] + list(messages)
                 response = llm.invoke(enhanced_messages)
+                logger.info(f"First initial call llm response: {response}")
                 return {"messages": [response]}
 
             # Fallback for edge cases

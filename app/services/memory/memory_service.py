@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import uuid
 import logging
 import re
+from app.config import SESSION_TTL_HOURS, MAX_SESSION_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ class ConversationMemory:
     
     def __init__(self):
         self.sessions: Dict[str, Dict[str, Any]] = {}
-        self.max_session_history = 20  # Match Redis: keep last 20 messages
-        self.default_ttl = timedelta(hours=24)  # Match Redis: 24h TTL
+        self.max_session_history = MAX_SESSION_HISTORY  # From environment configuration
+        self.default_ttl = timedelta(hours=SESSION_TTL_HOURS)  # From environment configuration
     
     def create_session(self, user_id: str) -> str:
         """Create a new session for a user with TTL-based expiration (matching Redis)."""
@@ -83,6 +84,22 @@ class ConversationMemory:
             logger.info(f"Explicitly deleted memory session: {session_id[:8]}...")
             return True
         return False
+
+    def clear_all_sessions(self) -> int:
+        """Clear all sessions from memory and return the number of sessions removed.
+
+        Use this method carefully (e.g., admin action or in tests). Prefer
+        `delete_session` for targeted removal or `cleanup_expired_sessions` to
+        remove only expired sessions.
+        """
+        total = len(self.sessions)
+        if total == 0:
+            logger.info("clear_all_sessions called but no sessions existed")
+            return 0
+
+        self.sessions.clear()
+        logger.info(f"Cleared all in-memory sessions ({total} removed)")
+        return total
     
     def get_session_info(self) -> Dict[str, Any]:
         """Get session information (matching Redis interface)."""
@@ -112,6 +129,7 @@ class ConversationMemory:
         
         # TTL: Touch session to reset expiration time on activity
         self.touch_session(session_id)
+        print(f"store_interaction response",response)
         
         interaction = {
             "timestamp": datetime.now(),

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List
 from .memory_service import memory_service
 from app.tools.session_manager import cleanup_expired_sessions
+from app.config import MEMORY_CLEANUP_INTERVAL_MINUTES, SESSION_TTL_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,8 @@ class MemoryManager:
     """Manages memory cleanup and session expiration."""
     
     def __init__(self):
-        self.cleanup_interval = 300  # 5 minutes
-        self.session_max_age = timedelta(hours=24)  # 24 hours
+        self.cleanup_interval = MEMORY_CLEANUP_INTERVAL_MINUTES * 60  # Convert minutes to seconds
+        self.session_max_age = timedelta(hours=SESSION_TTL_HOURS)  # From environment configuration
         self.max_total_sessions = 1000  # Maximum sessions in memory
         self._cleanup_task = None
     

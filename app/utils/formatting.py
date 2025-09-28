@@ -22,8 +22,7 @@ def format_basic_message(chart_data: List[Dict], file_name: str, row_count: int,
     # Debug logging to help troubleshoot
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"format_basic_message called with: report_type='{report_type}', chart_data_len={len(chart_data) if chart_data else 0}, original_data_len={len(original_chart_data) if original_chart_data else 0}, file_name='{file_name}'")
-
+    
     # Use original_chart_data to understand the full picture
     all_data = original_chart_data if original_chart_data else chart_data
 

@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import redis
-from app.config import DEBUG
+from app.config import DEBUG, SESSION_TTL_HOURS, MAX_SESSION_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,10 @@ class RedisSessionStorage:
         }
         
         if self.available:
-            # Store in Redis with 24-hour expiration
+            # Store in Redis with configurable expiration from environment
             self.redis_client.setex(
                 f"session:{session_id}",
-                timedelta(hours=24),
+                timedelta(hours=SESSION_TTL_HOURS),
                 json.dumps(session_data, default=str)
             )
         
@@ -78,14 +78,14 @@ class RedisSessionStorage:
             return False
         
         try:
-            # Truncate interaction history to last 20 messages for memory efficiency
+            # Truncate interaction history to configured max for memory efficiency
             if "interactions" in session_data:
-                session_data["interactions"] = session_data["interactions"][-20:]
+                session_data["interactions"] = session_data["interactions"][-MAX_SESSION_HISTORY:]
             
-            # Update session data and reset TTL to 24 hours (keep active sessions alive)
+            # Update session data and reset TTL to configured hours (keep active sessions alive)
             self.redis_client.setex(
                 f"session:{session_id}",
-                timedelta(hours=24),  # Reset TTL on activity
+                timedelta(hours=SESSION_TTL_HOURS),  # Reset TTL on activity
                 json.dumps(session_data, default=str)
             )
             return True

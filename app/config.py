@@ -27,6 +27,12 @@ MAX_AGENT_LOOPS = 10
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
 
+# Session Management Configuration
+SESSION_TTL_HOURS = float(os.getenv("SESSION_TTL_HOURS", "0.25"))
+SESSION_COOKIE_MAX_AGE_HOURS = float(os.getenv("SESSION_COOKIE_MAX_AGE_HOURS", "0.25"))
+MEMORY_CLEANUP_INTERVAL_MINUTES = float(os.getenv("MEMORY_CLEANUP_INTERVAL_MINUTES", "5"))
+MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
+
 # System prompt components
 SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}

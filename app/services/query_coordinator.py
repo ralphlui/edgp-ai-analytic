@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
 
 from app.core.analytic_service import AnalyticService
-from app.services.memory import memory_service, memory_manager, RedisSessionStorage
+from app.services.memory import memory_service, RedisSessionStorage
 from app.auth import validate_user_profile_with_response
 from app.utils.sanitization import sanitize_text_input
 from app.utils.request_context import (
@@ -18,10 +18,10 @@ from app.utils.request_context import (
     reset_tenant_context
 )
 from app.tools import bind_session_to_tenant, unbind_session
-from app.config import USE_REDIS_SESSIONS, REDIS_URL
+from app.config import USE_REDIS_SESSIONS, REDIS_URL, SESSION_COOKIE_MAX_AGE_HOURS
 
 # Constants
-SESSION_COOKIE_MAX_AGE = 3600
+SESSION_COOKIE_MAX_AGE = SESSION_COOKIE_MAX_AGE_HOURS * 3600  # Convert hours to seconds
 SESSION_ID_PREFIX_LENGTH = 8
 
 logger = logging.getLogger("analytic_agent")
@@ -144,29 +144,20 @@ class QueryCoordinator:
             safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
             logger.debug(f"Sanitized prompt for session {session_id[:8]}...")
 
-            # 7) SIMPLIFIED: Extract explicit references from sanitized prompt
-            session_storage = self._get_session_storage()
-            if hasattr(session_storage, 'extract_and_store_references'):
-                # Using memory storage
-                session_storage.extract_and_store_references(session_id, safe_prompt)
-            # For Redis storage, we'll handle reference extraction differently
-
-           
-
-            # 9) Set session cookie
+            # 7) Set session cookie
             self._set_session_cookie(response, session_id)
 
-            # 10) Execute analytic query (LLM handles complex reference resolution)
+            # 8) Execute analytic query (LLM handles complex reference resolution)
             result = await self._analytic_service.process_query(
                 prompt=safe_prompt,
                 session_id=session_id,
                 conversation_history=conversation_history
             )
 
-            # 11) Store interaction result (use original prompt for logging accuracy)
+            # 9) Store interaction result (use original prompt for logging accuracy)
             self._store_interaction_result(session_id, safe_prompt, result)
 
-            # 12) Log debug information
+            # 10) Log debug information
             self._log_debug_info(session_id, safe_prompt, result)
 
             return result
@@ -188,6 +179,8 @@ class QueryCoordinator:
 
         finally:
             # Cleanup
+            info = memory_service.get_session_info()
+            print("Session Info in memory:", info)
             if tenant_tokens:
                 reset_tenant_context(tenant_tokens)
             if session_id:
@@ -277,6 +270,7 @@ class QueryCoordinator:
         try:
             tool_name = result.get("tool_name", "analytic_query")
             session_storage = self._get_session_storage()
+            print(f"'Using session storage result: {result}")
             
             if hasattr(session_storage, 'get_session'):
                 # Using Redis storage - need to implement interaction storage
@@ -298,12 +292,13 @@ class QueryCoordinator:
                         }
                     }
                     
-                    # Maintain history limit (10 interactions)
+                    # Maintain history limit (20 interactions - matching memory storage)
                     interactions = session_data.get("interactions", [])
                     interactions.append(interaction)
                     if len(interactions) > 10:
-                        interactions.pop(0)
-                    
+                        # Remove oldest interactions to maintain limit
+                        interactions = interactions[-10:]
+
                     session_data["interactions"] = interactions
                     session_storage.update_session(session_id, session_data)
                     logger.debug(f"Stored interaction in Redis for session {session_id[:8]}...")
@@ -313,18 +308,6 @@ class QueryCoordinator:
                 # Using memory storage
                 session_storage.store_interaction(session_id, original_prompt, tool_name, result)
                 logger.debug(f"Stored interaction in memory for session {session_id[:8]}...")
-            
-            # Update memory stats for monitoring (regardless of storage type)
-            stats = memory_manager.get_memory_stats()
-            storage = self._get_session_storage()
-            if hasattr(storage, 'available') and storage.available:
-                # For Redis, get session info (no expensive cleanup needed)
-                redis_info = storage.get_session_info()
-                session_count = redis_info.get("total_sessions", 0)
-                if session_count > 500:
-                    logger.warning(f"High Redis session count: {session_count} sessions active")
-            elif stats["total_sessions"] > 500:
-                logger.warning(f"High memory session count: {stats['total_sessions']} sessions active")
                 
         except Exception as e:
             logger.warning(f"Failed to store interaction: {e}")
@@ -335,16 +318,50 @@ class QueryCoordinator:
         prompt: str, 
         error: Exception
     ) -> None:
-        """Store error interaction in memory service."""
+        """Store error interaction using current storage type."""
         try:
             error_result = {
                 "success": False,
                 "error": str(error),
                 "error_type": type(error).__name__
             }
-            memory_service.store_interaction(session_id, prompt, "error", error_result)
+            
+            # Use the same storage type as the rest of the session
+            session_storage = self._get_session_storage()
+            
+            if hasattr(session_storage, 'get_session'):
+                # Using Redis storage - store error in session data
+                session_data = session_storage.get_session(session_id)
+                if session_data:
+                    interaction = {
+                        "timestamp": time.time(),
+                        "user_prompt": prompt,
+                        "tool_used": "error",
+                        "response_summary": error_result
+                    }
+                    
+                    interactions = session_data.get("interactions", [])
+                    interactions.append(interaction)
+                    if len(interactions) > 20:
+                        interactions = interactions[-20:]
+                    
+                    session_data["interactions"] = interactions
+                    session_storage.update_session(session_id, session_data)
+                    logger.debug(f"Stored error interaction in Redis for session {session_id[:8]}...")
+                else:
+                    logger.warning(f"Session {session_id[:8]} not found in Redis for error storage")
+            else:
+                # Using memory storage
+                session_storage.store_interaction(session_id, prompt, "error", error_result)
+                logger.debug(f"Stored error interaction in memory for session {session_id[:8]}...")
+                
         except Exception as e:
             logger.warning(f"Failed to store error interaction: {e}")
+            # Fallback to memory storage if all else fails
+            try:
+                memory_service.store_interaction(session_id, prompt, "error", {"success": False, "error": str(error)})
+            except:
+                pass  # Silent fallback failure
 
     def _log_debug_info(
         self, 
