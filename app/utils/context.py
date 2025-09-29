@@ -115,6 +115,8 @@ def create_interpretation_prompt(tool_results: List[Dict[str, Any]], context_ins
     prompt_parts.append("├── Highlight key patterns, trends, or anomalies")
     prompt_parts.append("├── Provide actionable recommendations if applicable")
     prompt_parts.append("├── Use clear, conversational language")
-    prompt_parts.append("└── Focus on the most important findings")
+    prompt_parts.append("├── Keep the response very concise - limit to 3-4 sentences maximum")
+    prompt_parts.append("├── Focus only on the most critical findings and brief recommendations")
+    prompt_parts.append("└── Avoid detailed explanations or lengthy lists")
 
     return "\n".join(prompt_parts)

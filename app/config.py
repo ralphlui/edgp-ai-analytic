@@ -1,20 +1,102 @@
 import os
 from dotenv import load_dotenv
-load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+def load_environment_config():
+    """
+    Load environment-specific configuration based on ENV variable.
+    
+    EnvironmeTOOL USAGE GUIDELINES:
+├── ALWAYS specify chart_type parameter (default: "bar")
+├── ALWAYS specify report_type parameter - THIS IS REQUIRED, NO DEFAULT:
+   • If user asks for "success rate" → report_type="success" (even with pie charts)
+   • If user asks for "failure rate" → report_type="failure"  
+   • If user asks for "both" or "analyze" → report_type="both"
+   • You MUST explicitly set this parameter in every tool call
+├── ONLY include start_date and end_date when dates are explicitly mentioned in the user query
+├── If no dates are mentioned, do NOT include start_date or end_date parameters
+├── Extract file names and clean extra quotes/spaces
+├── For domain queries: Extract domain name WITHOUT adding "_domain" suffix
+├── Filter data by created_date column
+├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
+└── Use org_id for multi-tenant isolation"""
+    env = os.getenv('ENVIRONMENT', 'development').lower()
+    
+    # Environment file mapping
+    env_files = {
+        'production': '.env.production',
+        'sit': '.env.sit',
+        'development': '.env',
+    }
+    
+    # Load the appropriate .env file
+    env_file = env_files.get(env, '.env')
+    
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+        print(f"🔧 Loaded configuration from: {env_file}")
+    else:
+        # Fallback to default .env
+        load_dotenv()
+        print(f"⚠️  Environment file {env_file} not found, using default .env")
+        if env != 'development':
+            print(f"💡 Create {env_file} for {env} environment configuration")
+
+# Load environment-specific configuration
+load_environment_config()
+
+
+
+# AWS Secrets Manager integration (conditional)
+USE_SECRETS_MANAGER: bool = os.getenv('USE_SECRETS_MANAGER', 'true').lower() == 'true'
+
+if USE_SECRETS_MANAGER:
+    try:
+        from app.services.aws_secrets import get_jwt_public_key, get_openai_api_key, get_secrets_manager
+        
+        secrets_manager = get_secrets_manager()
+        
+        if secrets_manager.available:
+            # Retrieve secrets from AWS Secrets Manager with environment variable fallbacks
+            OPENAI_API_KEY = get_openai_api_key(os.getenv("OPENAI_API_KEY"))
+            JWT_SECRET_KEY = get_jwt_public_key(os.getenv("JWT_SECRET_KEY"))
+            
+            print(f"🔐 AWS Secrets Manager: Connected - Using secure secrets from region {secrets_manager.region_name}")
+        else:
+            # Fall back to environment variables
+            OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+            JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+            print("⚠️  AWS Secrets Manager: Unavailable - Using environment variables")
+            
+    except ImportError as e:
+        print(f"⚠️  AWS Secrets Manager import failed: {e} - Using environment variables")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    except Exception as e:
+        print(f"⚠️  AWS Secrets Manager initialization failed: {e} - Using environment variables")
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+        JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+else:
+    # Use environment variables only
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    print("🔧 AWS Secrets Manager: Disabled - Using environment variables only")
+
+# Other configuration variables
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 USE_LLM = bool(OPENAI_API_KEY)
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 # default to ap-southeast-1 if not provided
-AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "ap-southeast-1")
+AWS_DEFAULT_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+
+# DynamoDB table names
+DYNAMODB_TRACKER_TABLE_NAME = os.getenv("DYNAMODB_TRACKER_TABLE_NAME")
+DYNAMODB_HEADER_TABLE_NAME = os.getenv("DYNAMODB_HEADER_TABLE_NAME")
 
 # Admin API configuration
-ADMIN_API_BASE_URL = os.getenv("ADMIN_API_BASE_URL")
+ADMIN_API_BASE_URL = os.getenv("ADMIN_URL")
 
 # JWT configuration
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "RS256")
 
 # Enable verbose debug outputs when set to '1'
@@ -23,9 +105,33 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Maximum number of assistant->tool cycles before we force-stop the agent
 MAX_AGENT_LOOPS = 10
 
+# Application port configuration
+APP_PORT = int(os.getenv("APP_PORT", "8000"))
+
+# Redis configuration for session storage
+REDIS_URL = os.getenv("REDIS_URL")
+USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
+
+# Session Management Configuration
+SESSION_TTL_HOURS = float(os.getenv("SESSION_TTL_HOURS", "0.25"))
+SESSION_COOKIE_MAX_AGE_HOURS = float(os.getenv("SESSION_COOKIE_MAX_AGE_HOURS", "0.25"))
+MEMORY_CLEANUP_INTERVAL_MINUTES = float(os.getenv("MEMORY_CLEANUP_INTERVAL_MINUTES", "5"))
+MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
+
 # System prompt components
 SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}
+
+SPECIALIZATION: I am an analytics agent that helps with data analysis, reporting, and visualization. 
+I can help with queries about success rates, failure rates, data quality metrics, and analytics from uploaded files and domains.
+
+I can process various types of queries including:
+- Data analysis and reporting requests
+- Success/failure rate calculations
+- Chart and visualization generation
+- File-based and domain-based analytics
+- Date-filtered data queries
+- Customer analytics and reporting
 
 CORE CAPABILITIES:
 - Retrieve analytics from DynamoDB via get_success_rate_by_file_name tool
@@ -86,6 +192,7 @@ TOOL CALL REQUIREMENTS:
 ├── Extract file names and clean extra quotes/spaces
 ├── For domain queries: Extract domain name WITHOUT adding "_domain" suffix
 ├── Filter data by created_date column
+├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
 └── Use org_id for multi-tenant isolation"""
 
 DOMAIN_EXTRACTION_INSTRUCTIONS = """
@@ -139,4 +246,5 @@ RESPONSE PRINCIPLES:
 - Highlight concerning patterns or excellent performance
 - Only apply date filters when explicitly mentioned in the user query
 - If no dates are specified, analyze all available data without date restrictions
-- For customer analytics, use the appropriate customer analytics tools"""
+- For customer analytics, use the appropriate customer analytics tools
+- When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages"""

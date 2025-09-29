@@ -33,6 +33,18 @@ class AnalyticService:
         Returns a dict with keys: success (bool), message (str), chart_image (str base64)
         """
         try:
+            # First check if the query is analytics-related
+            from app.utils.report_type import is_analytics_related
+            is_analytics = await is_analytics_related(prompt)
+
+            if not is_analytics:
+                logger.info(f"Non-analytics query detected: '{prompt[:50]}...'")
+                return {
+                    "success": False,
+                    "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
+                    "chart_image": None
+                }
+
             # Use unified hybrid classification (handles regex + LLM internally)
             report_type = await get_report_type(prompt)
             
@@ -153,7 +165,7 @@ file names or domain names based on the context above. If a reference is unclear
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
             from datetime import date
-            from app.services.memory_service import memory_service
+            from app.services.memory import memory_service
 
             logger.info(f"Processing prompt: '{prompt[:100]}...'")
             logger.info(f"Report type: '{report_type}'")
@@ -168,9 +180,12 @@ file names or domain names based on the context above. If a reference is unclear
 
         # Get reference context from memory service
         reference_context = memory_service.get_reference_context_for_llm(session_id) if session_id else ""
+        print(f"Reference context for LLM: {reference_context}")
         
         # Extract conversation insights
         conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
+        print(f"Conversation insights for LLM: {conversation_insights}")
+        print(f"Conversation conversation_history for LLM: {conversation_history}")
 
         # Create enhanced system message with reference resolution
         system_message = AnalyticService._create_enhanced_system_message(
@@ -188,26 +203,8 @@ file names or domain names based on the context above. If a reference is unclear
                     safe_prompt = sanitize_text_input(interaction['user_prompt'], 150)
                     messages.append(HumanMessage(content=safe_prompt))
                 
-                if interaction.get("response_summary", {}).get("message"):
-                    # Keep only key metrics from previous responses
-                    prev_response = interaction["response_summary"]["message"]
-                    
-                    # Extract key information (success rates, file names, etc.)
-                    import re
-                    key_info = []
-                    
-                    # Extract percentage rates
-                    rates = re.findall(r'\d+\.?\d*%', prev_response)
-                    if rates:
-                        key_info.append(f"Rates: {', '.join(rates[:3])}")
-                    
-                    # Extract file/domain info
-                    if interaction["response_summary"].get("file_name"):
-                        key_info.append(f"File: {interaction['response_summary']['file_name']}")
-                    
-                    if key_info:
-                        summary = " | ".join(key_info)
-                        messages.append(AIMessage(content=f"Previous: {summary}"))
+                # Skip adding previous response summaries to avoid misleading the LLM
+                # The LLM should focus on the current query rather than cached summaries
 
         # Add the current prompt
         safe_prompt = sanitize_text_input(prompt, 300)
@@ -292,7 +289,7 @@ Please verify your file or domain references and try again.
                         tool_results.append(str(m.content))
 
                 # Handle AIMessage with tool calls
-                elif m.__class__.__name__ == 'AIMessage' and hasattr(m, 'tool_calls'):
+                elif m.__class__.__name__ == 'AIMessage' and getattr(m, 'tool_calls', None):
                     for tool_call in m.tool_calls or []:
                         if tool_call.get('args'):
                             args = tool_call['args']
@@ -334,8 +331,10 @@ Please verify your file or domain references and try again.
         
         logger.info(f"Final report_type: {final_report_type} (LLM: {llm_detected_report_type}, Pre-classified: {report_type})")
 
-        # Filter chart data based on final report type
-        original_chart_data = chart_data.copy()
+        # Filter chart data based on final report type  
+        # Store original only if debug mode is enabled to save memory
+        from app.config import DEBUG
+        original_chart_data = chart_data.copy() if DEBUG else None
         filtered_chart_data = AnalyticService.filter_chart_data_by_report_type(chart_data, final_report_type)
 
         # Generate chart image if we have data
@@ -359,11 +358,12 @@ Please verify your file or domain references and try again.
         for m in compiled_result.get("messages", []):
             if hasattr(m, 'content') and hasattr(m, '__class__'):
                 # Get the final AI interpretation message
-                if m.__class__.__name__ == 'AIMessage' and not hasattr(m, 'tool_calls'):
+                if m.__class__.__name__ == 'AIMessage' and not getattr(m, 'tool_calls', None):
                     interpretation = m.content
                     break
+        logger.info(f"LLM interpretation1: {interpretation}")
         
-        # Fallback if no interpretation found
+        #Fallback if no interpretation found
         if not interpretation:
             from app.utils.formatting import format_basic_message
             interpretation = format_basic_message(
@@ -376,24 +376,16 @@ Please verify your file or domain references and try again.
                 original_chart_data=original_chart_data
             )
 
+
         result = {
             "success": True,
             "message": interpretation,
-            "chart_image": chart_image
+            "chart_image": chart_image,
+            "file_name": file_name,
+            "domain_name": domain_name,
+            "row_count": row_count,
+            "report_type": final_report_type
         }
 
-        # Add debug data if enabled
-        from app.config import DEBUG
-        if DEBUG:
-            result.update({
-                "chart_data": filtered_chart_data,
-                "original_chart_data": original_chart_data,
-                "tool_results": tool_results,
-                "chart_type": chart_type,
-                "report_type": final_report_type,
-                "llm_detected_report_type": llm_detected_report_type,
-                "pre_classified_report_type": report_type,
-                "reference_context": reference_context
-            })
 
         return result

@@ -1,27 +1,35 @@
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import logging
 import re
+from app.config import SESSION_TTL_HOURS, MAX_SESSION_HISTORY
 
 logger = logging.getLogger(__name__)
 
 class ConversationMemory:
     """
-    Simplified memory service that focuses on storing context and basic reference resolution.
-    Complex reference resolution is delegated to the LLM.
+    Memory service with TTL-based session management (matching Redis behavior).
+    - Default TTL: 24 hours
+    - Reset TTL on each message (touch_session)  
+    - Keep last 20 messages (truncate history)
+    - Explicit cleanup on logout/session end
     """
     
     def __init__(self):
         self.sessions: Dict[str, Dict[str, Any]] = {}
-        self.max_session_history = 10
+        self.max_session_history = MAX_SESSION_HISTORY  # From environment configuration
+        self.default_ttl = timedelta(hours=SESSION_TTL_HOURS)  # From environment configuration
     
     def create_session(self, user_id: str) -> str:
-        """Create a new session for a user."""
+        """Create a new session for a user with TTL-based expiration (matching Redis)."""
         session_id = str(uuid.uuid4())
+        now = datetime.now()
         self.sessions[session_id] = {
             "user_id": user_id,
-            "created_at": datetime.now(),
+            "created_at": now,
+            "last_activity": now,  # TTL: Track last activity
+            "expires_at": now + self.default_ttl,  # TTL: Expiration time
             "interactions": [],
             "context": {
                 "recent_files": [],  # Track multiple recent files
@@ -31,14 +39,97 @@ class ConversationMemory:
                 "session_focus": "analytic"
             }
         }
+        logger.info(f"Created memory session {session_id[:8]}... with 24h TTL (expires: {self.sessions[session_id]['expires_at'].strftime('%Y-%m-%d %H:%M:%S')})")
         return session_id
+    
+    def touch_session(self, session_id: str) -> bool:
+        """Reset session TTL on activity (matching Redis behavior)."""
+        if session_id not in self.sessions:
+            return False
+        
+        now = datetime.now()
+        self.sessions[session_id]["last_activity"] = now
+        self.sessions[session_id]["expires_at"] = now + self.default_ttl
+        
+        logger.debug(f"Touched memory session {session_id[:8]}... - TTL reset to 24h (expires: {self.sessions[session_id]['expires_at'].strftime('%Y-%m-%d %H:%M:%S')})")
+        return True
+    
+    def is_session_expired(self, session_id: str) -> bool:
+        """Check if session has expired based on TTL."""
+        if session_id not in self.sessions:
+            return True
+        
+        return datetime.now() > self.sessions[session_id]["expires_at"]
+    
+    def cleanup_expired_sessions(self) -> int:
+        """Remove expired sessions and return count of cleaned sessions."""
+        expired_sessions = []
+        now = datetime.now()
+        
+        for session_id, session_data in self.sessions.items():
+            if now > session_data["expires_at"]:
+                expired_sessions.append(session_id)
+        
+        # Remove expired sessions
+        for session_id in expired_sessions:
+            del self.sessions[session_id]
+            logger.info(f"Removed expired memory session: {session_id[:8]}... (TTL expired)")
+        
+        return len(expired_sessions)
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Explicitly delete a session (for logout/session end)."""
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            logger.info(f"Explicitly deleted memory session: {session_id[:8]}...")
+            return True
+        return False
+
+    def clear_all_sessions(self) -> int:
+        """Clear all sessions from memory and return the number of sessions removed.
+
+        Use this method carefully (e.g., admin action or in tests). Prefer
+        `delete_session` for targeted removal or `cleanup_expired_sessions` to
+        remove only expired sessions.
+        """
+        total = len(self.sessions)
+        if total == 0:
+            logger.info("clear_all_sessions called but no sessions existed")
+            return 0
+
+        self.sessions.clear()
+        logger.info(f"Cleared all in-memory sessions ({total} removed)")
+        return total
+    
+    def get_session_info(self) -> Dict[str, Any]:
+        """Get session information (matching Redis interface)."""
+        now = datetime.now()
+        expired_count = 0
+        active_count = 0
+        
+        for session_data in self.sessions.values():
+            if now > session_data["expires_at"]:
+                expired_count += 1
+            else:
+                active_count += 1
+        
+        return {
+            "total_sessions": len(self.sessions),
+            "active_sessions": active_count,
+            "expired_sessions": expired_count,
+            "storage_type": "memory_ttl"
+        }
     
     def store_interaction(self, session_id: str, user_prompt: str, 
                          tool_used: str, response: Dict[str, Any]):
-        """Store an interaction in session memory."""
+        """Store an interaction in session memory and reset TTL."""
         if session_id not in self.sessions:
             logger.warning(f"Session {session_id[:8]}... not found, auto-creating")
             self.sessions[session_id] = self._create_default_session()
+        
+        # TTL: Touch session to reset expiration time on activity
+        self.touch_session(session_id)
+        print(f"store_interaction response",response)
         
         interaction = {
             "timestamp": datetime.now(),
@@ -58,18 +149,28 @@ class ConversationMemory:
         # Update context with new file/domain references
         self._update_context_from_interaction(session_id, response)
         
-        # Add interaction and maintain history limit
+        # Add interaction and maintain history limit (20 messages like Redis)
         self.sessions[session_id]["interactions"].append(interaction)
         if len(self.sessions[session_id]["interactions"]) > self.max_session_history:
-            self.sessions[session_id]["interactions"].pop(0)
+            # Remove oldest interactions to maintain limit
+            removed_count = len(self.sessions[session_id]["interactions"]) - self.max_session_history
+            self.sessions[session_id]["interactions"] = self.sessions[session_id]["interactions"][removed_count:]
+            logger.debug(f"Truncated {removed_count} old interactions for session {session_id[:8]}... (keeping last {self.max_session_history})")
         
         return True
     
     def get_session_context(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Get session context for reasoning and planning."""
+        """Get session context for reasoning and planning (with TTL reset)."""
         if session_id not in self.sessions:
             logger.warning(f"Session {session_id[:8]}... not found, auto-creating")
             self.sessions[session_id] = self._create_default_session()
+        elif self.is_session_expired(session_id):
+            logger.warning(f"Session {session_id[:8]}... expired, auto-creating new one")
+            self.delete_session(session_id)
+            self.sessions[session_id] = self._create_default_session()
+        
+        # TTL: Touch session to reset expiration on access
+        self.touch_session(session_id)
         
         session = self.sessions[session_id]
         recent_interactions = session["interactions"][-3:]
@@ -83,11 +184,19 @@ class ConversationMemory:
         }
     
     def get_conversation_history(self, session_id: str) -> List[Dict[str, Any]]:
-        """Get conversation history for the session."""
+        """Get conversation history for the session (with TTL reset)."""
         if session_id not in self.sessions:
             logger.warning(f"Session {session_id[:8]}... not found, auto-creating")
             self.sessions[session_id] = self._create_default_session()
             return []
+        elif self.is_session_expired(session_id):
+            logger.warning(f"Session {session_id[:8]}... expired, returning empty history")
+            self.delete_session(session_id)
+            return []
+        
+        # TTL: Touch session to reset expiration on access
+        self.touch_session(session_id)
+        
         return self.sessions[session_id]["interactions"]
     
     def extract_and_store_references(self, session_id: str, prompt: str):
@@ -180,10 +289,13 @@ tools and interpreting the user's intent.
         return resolved_prompt
     
     def _create_default_session(self) -> Dict[str, Any]:
-        """Create default session structure."""
+        """Create default session structure with TTL."""
+        now = datetime.now()
         return {
             "user_id": "unknown",
-            "created_at": datetime.now(),
+            "created_at": now,
+            "last_activity": now,  # TTL: Track last activity
+            "expires_at": now + self.default_ttl,  # TTL: Expiration time
             "interactions": [],
             "context": {
                 "recent_files": [],
