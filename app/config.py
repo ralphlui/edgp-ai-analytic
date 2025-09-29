@@ -97,6 +97,9 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Maximum number of assistant->tool cycles before we force-stop the agent
 MAX_AGENT_LOOPS = 10
 
+# Application port configuration
+APP_PORT = int(os.getenv("APP_PORT", "8000"))
+
 # Redis configuration for session storage
 REDIS_URL = os.getenv("REDIS_URL")
 USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"

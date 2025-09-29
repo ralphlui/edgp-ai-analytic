@@ -160,7 +160,14 @@ class QueryCoordinator:
             # 10) Log debug information
             self._log_debug_info(session_id, safe_prompt, result)
 
-            return result
+            final_result = {
+            "success": result.get("success", False),
+            "message": result.get("message", ""),
+            "chart_image": result.get("chart_image")
+        }
+
+
+            return final_result
 
         except (ValidationError, ValueError) as e:
             logger.warning(f"Validation error: {e}")
