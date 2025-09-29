@@ -5,12 +5,20 @@ def load_environment_config():
     """
     Load environment-specific configuration based on ENV variable.
     
-    Environment files priority:
-    1. ENVIRONMENT=production → .env.production
-    2. ENVIRONMENT=sit → .env.sit
-    3. ENVIRONMENT=development → .env
-    4. Default → .env
-    """
+    EnvironmeTOOL USAGE GUIDELINES:
+├── ALWAYS specify chart_type parameter (default: "bar")
+├── ALWAYS specify report_type parameter - THIS IS REQUIRED, NO DEFAULT:
+   • If user asks for "success rate" → report_type="success" (even with pie charts)
+   • If user asks for "failure rate" → report_type="failure"  
+   • If user asks for "both" or "analyze" → report_type="both"
+   • You MUST explicitly set this parameter in every tool call
+├── ONLY include start_date and end_date when dates are explicitly mentioned in the user query
+├── If no dates are mentioned, do NOT include start_date or end_date parameters
+├── Extract file names and clean extra quotes/spaces
+├── For domain queries: Extract domain name WITHOUT adding "_domain" suffix
+├── Filter data by created_date column
+├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
+└── Use org_id for multi-tenant isolation"""
     env = os.getenv('ENVIRONMENT', 'development').lower()
     
     # Environment file mapping
@@ -114,6 +122,17 @@ MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
 SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}
 
+SPECIALIZATION: I am an analytics agent that helps with data analysis, reporting, and visualization. 
+I can help with queries about success rates, failure rates, data quality metrics, and analytics from uploaded files and domains.
+
+I can process various types of queries including:
+- Data analysis and reporting requests
+- Success/failure rate calculations
+- Chart and visualization generation
+- File-based and domain-based analytics
+- Date-filtered data queries
+- Customer analytics and reporting
+
 CORE CAPABILITIES:
 - Retrieve analytics from DynamoDB via get_success_rate_by_file_name tool
 - Retrieve domain-based analytics via get_success_rate_by_domain_name tool
@@ -173,6 +192,7 @@ TOOL CALL REQUIREMENTS:
 ├── Extract file names and clean extra quotes/spaces
 ├── For domain queries: Extract domain name WITHOUT adding "_domain" suffix
 ├── Filter data by created_date column
+├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
 └── Use org_id for multi-tenant isolation"""
 
 DOMAIN_EXTRACTION_INSTRUCTIONS = """
@@ -226,4 +246,5 @@ RESPONSE PRINCIPLES:
 - Highlight concerning patterns or excellent performance
 - Only apply date filters when explicitly mentioned in the user query
 - If no dates are specified, analyze all available data without date restrictions
-- For customer analytics, use the appropriate customer analytics tools"""
+- For customer analytics, use the appropriate customer analytics tools
+- When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages"""

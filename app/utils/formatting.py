@@ -22,7 +22,7 @@ def format_basic_message(chart_data: List[Dict], file_name: str, row_count: int,
     # Debug logging to help troubleshoot
     import logging
     logger = logging.getLogger(__name__)
-    
+
     # Use original_chart_data to understand the full picture
     all_data = original_chart_data if original_chart_data else chart_data
 
@@ -61,11 +61,7 @@ def format_basic_message(chart_data: List[Dict], file_name: str, row_count: int,
                 return base_msg
         
         # Fallback for when no relevant data is found
-        base_msg = f"No {sanitize_text_input(report_type, 20)} data found"
-        if file_name:
-            base_msg += f" for file: {sanitize_filename(file_name)}"
-        if date_filter_used:
-            base_msg += f" within the specified date range"
+        base_msg = "I'm an analytics assistant focused on data analysis, reporting, and visualizations. I'm not able to help with this specific request, but I'd be happy to assist with any data-related questions you have!"
         return base_msg
 
     success_data = next((item for item in chart_data if item.get('status', '').lower() == 'success'), None)
