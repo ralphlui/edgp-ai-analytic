@@ -5,6 +5,9 @@ import pytest
 import sys
 import os
 
+# Set test environment BEFORE any imports from app
+os.environ['ENVIRONMENT'] = 'test'
+
 # Add the app directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
@@ -28,12 +31,9 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def setup_test_environment():
-    """Set up test environment variables."""
-    os.environ['DEBUG'] = '1'
-    os.environ['OPENAI_API_KEY'] = 'test-key'
-    os.environ['JWT_SECRET_KEY'] = 'test-secret'
-    os.environ['AWS_ACCESS_KEY_ID'] = 'test-access-key'
-    os.environ['AWS_SECRET_ACCESS_KEY'] = 'test-secret-key'
+    """Set up test environment to use .env.test file."""
+    # Environment already set at module level to ensure proper loading
+    # This fixture is kept for any additional test-specific setup
     yield
     # Cleanup after tests if needed
 

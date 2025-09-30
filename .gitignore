@@ -37,7 +37,6 @@ ENV/
 env/
 .env.local
 .env.development
-.env.test
 
 # IDEs
 .vscode/

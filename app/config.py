@@ -25,6 +25,7 @@ def load_environment_config():
     env_files = {
         'production': '.env.production',
         'sit': '.env.sit',
+        'test': '.env.test',
         'development': '.env',
     }
     
