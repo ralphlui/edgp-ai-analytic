@@ -19,7 +19,7 @@ def load_environment_config():
 ├── Filter data by created_date column
 ├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
 └── Use org_id for multi-tenant isolation"""
-    env = os.getenv('ENVIRONMENT', 'development').lower()
+    env = os.getenv('APP_ENV', 'development').lower()
     
     # Environment file mapping
     env_files = {

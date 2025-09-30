@@ -6,7 +6,7 @@ import sys
 import os
 
 # Set test environment BEFORE any imports from app
-os.environ['ENVIRONMENT'] = 'test'
+os.environ['APP_ENV'] = 'test'
 
 # Add the app directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
