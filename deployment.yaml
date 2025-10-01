@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edgp-app-analytic
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: edgp-app-analytic
+  template:
+    metadata:
+      labels:
+        app: edgp-app-analytic
+    spec:
+      containers:
+        - name: edgp-app-analytic
+          image: public.ecr.aws/q1b5w5y6/edgp-app-analytic:VERSION
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8091
+          env:
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: my-configmap
+                  key: SPRING_PROFILES_ACTIVE
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: my-configmap
+                  key: AWS_REGION
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: aws_edgp_access_key_id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: aws_edgp_secret_key_id
+            - name: ADMIN_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: my-configmap
+                  key: ADMIN_URL
+          resources:
+           requests:
+             cpu: "50m"
+             memory: "250Mi"
+           limits:
+             cpu: "350m"
+             memory: "500Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytic-k8s-service
+spec:
+  selector:
+    app: edgp-app-analytic
+  ports:
+    - protocol: TCP
+      port: 8091
+      targetPort: 8091
+  type: NodePort
