@@ -26,18 +26,15 @@ class SecretsManager:
 
         try:
             self._client = boto3.client('secretsmanager', region_name=self.region_name)
-            # Test connection
-            self._client.list_secrets(MaxResults=1)
+            # Mark as available - we'll test connection on first actual secret retrieval
             self._available = True
-            logger.info(f"AWS Secrets Manager initialized successfully in {self.region_name}")
+            logger.info(f"AWS Secrets Manager client initialized for region {self.region_name}")
         except NoCredentialsError:
             logger.warning("AWS credentials not found - falling back to environment variables")
         except PartialCredentialsError:
             logger.warning("Incomplete AWS credentials - falling back to environment variables")
-        except ClientError as e:
-            logger.warning(f"AWS Secrets Manager unavailable: {e} - falling back to environment variables")
         except Exception as e:
-            logger.warning(f"Unexpected error initializing AWS Secrets Manager: {e} - falling back to environment variables")
+            logger.warning(f"Error initializing AWS Secrets Manager client: {e} - falling back to environment variables")
 
     @property
     def available(self) -> bool:
@@ -93,11 +90,17 @@ class SecretsManager:
             if error_code == 'ResourceNotFoundException':
                 logger.warning(f"Secret {secret_name} not found in AWS Secrets Manager")
             elif error_code == 'AccessDeniedException':
-                logger.warning(f"Access denied for secret {secret_name}")
+                logger.warning(f"Access denied for secret {secret_name} - insufficient permissions")
+                # Mark as unavailable for future calls to avoid repeated attempts
+                self._available = False
+            elif error_code in ['UnauthorizedOperation', 'InvalidUserID.NotFound', 'TokenRefreshRequired']:
+                logger.warning(f"AWS credentials issue for {secret_name}: {error_code}")
+                self._available = False
             else:
-                logger.warning(f"Error retrieving secret {secret_name}: {e}")
+                logger.warning(f"AWS error retrieving secret {secret_name}: {e}")
         except Exception as e:
             logger.warning(f"Unexpected error retrieving secret {secret_name}: {e}")
+            # For network or other issues, don't mark as unavailable immediately
 
         logger.debug(f"Using fallback value for {secret_name}")
         return fallback_value
@@ -169,6 +172,9 @@ def get_jwt_public_key(fallback_key: Optional[str] = None) -> Optional[str]:
     
     logger.info(f"Using secret name '{secret_name}' for JWT public key retrieval")
     
+    # Initialize return variable
+    jwt_key = None
+    
     # Try environment-specific first
     secret_data = secrets_manager.get_secret(secret_name, None)
 
@@ -176,9 +182,9 @@ def get_jwt_public_key(fallback_key: Optional[str] = None) -> Optional[str]:
     if secret_data:
         try:
             # Parse as JSON and extract jwt_public_key
-            secret_data = json.loads(secret_data)
-            if isinstance(secret_data, dict) and 'jwt_public_key' in secret_data:
-                raw_key = secret_data['jwt_public_key']
+            secret_json = json.loads(secret_data)
+            if isinstance(secret_json, dict) and 'jwt_public_key' in secret_json:
+                raw_key = secret_json['jwt_public_key']
                 # Ensure proper PEM formatting
                 if not raw_key.startswith('-----BEGIN'):
                     # Add PEM headers if missing
@@ -186,10 +192,9 @@ def get_jwt_public_key(fallback_key: Optional[str] = None) -> Optional[str]:
                 else:
                     jwt_key = raw_key
                 logger.info("Extracted and formatted JWT public key from JSON secret")
-            # If it's already a PEM string, use as-is
         except json.JSONDecodeError:
             # Not JSON, assume it's a plain PEM string
-            pass
+            jwt_key = secret_data
     
     # Fallback to simple name if environment-specific failed
     if jwt_key is None:
@@ -227,6 +232,9 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
     
     logger.info(f"Using secret name '{secret_name}' for OpenAI API key retrieval")
     
+    # Initialize return variable
+    openai_key = None
+    
     # Try environment-specific first
     secret_data = secrets_manager.get_secret(secret_name, None)
     
@@ -234,21 +242,19 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
     if secret_data:
         try:
             # Parse as JSON and extract openai_api_key (try multiple key names)
-            secret_data = json.loads(secret_data)
-            if isinstance(secret_data, dict):
+            secret_json = json.loads(secret_data)
+            if isinstance(secret_json, dict):
                 # Try different possible key names
                 for key_name in ['openai_api_key', 'OPENAI_API_KEY', 'openai_key', 'api_key']:
-                    if key_name in secret_data:
-                        openai_key = secret_data[key_name]
+                    if key_name in secret_json:
+                        openai_key = secret_json[key_name]
                         logger.info(f"Extracted OpenAI API key from JSON secret (key: {key_name})")
                         break
-            # If it's already a plain string, use as-is
         except json.JSONDecodeError:
             # Not JSON, assume it's a plain API key string
-            pass
+            openai_key = secret_data
     
     # Fallback to simple name if environment-specific failed
-    print(f"DEBUG: Retrieved secret for OpenAI API key: {openai_key}")
     if openai_key is None:
         openai_key = secrets_manager.get_secret("openai-api-key", fallback_key)
 
