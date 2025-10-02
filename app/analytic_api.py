@@ -85,7 +85,7 @@ app = FastAPI(
 # Initialize query coordinator
 coordinator = QueryCoordinator()
 
-@app.post("/query", response_model=Dict[str, Any])
+@app.post("/api/analytics/query", response_model=Dict[str, Any])
 async def receive_prompt(
     http_request: Request,
     response: Response,

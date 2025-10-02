@@ -158,7 +158,7 @@ def get_jwt_public_key(fallback_key: Optional[str] = None) -> Optional[str]:
     secrets_manager = get_secrets_manager()
     
     # Get environment from environment variable (avoiding circular import)
-    app_env = os.getenv('ENVIRONMENT', 'development').lower()
+    app_env = os.getenv('APP_ENV', 'development').lower()
 
     if app_env in ['sit']:
         secret_name = 'sit/edgp/secret'
