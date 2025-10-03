@@ -53,6 +53,8 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
         r'Act\s+as.*?(?=\s|$)',  # Role override attempts (single line)
         r'Pretend\s+to\s+be.*?$(?=\n|$)',  # Role override attempts (multiline)
         r'Pretend\s+to\s+be.*?(?=\s|$)',  # Role override attempts (single line)
+        r'pretend\s+you\s+have\s+no\s+safety.*?$(?=\n|$)',  # Safety bypass (multiline)
+        r'pretend\s+you\s+have\s+no\s+safety.*?(?=\s|$)',  # Safety bypass (single line)
         
         # Command execution attempts
         r'Execute:.*?$(?=\n|$)',  # Direct command execution (multiline)
@@ -70,6 +72,20 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
         r'\\r\\n',  # Encoded carriage returns
         r'%0A%0A',  # URL encoded newlines
         r'%0D%0A',  # URL encoded CRLF
+        
+        # HTML/Script injection patterns
+        r'<script.*?</script>',  # Script tags with content
+        r'<script.*?>',  # Opening script tags
+        r'</script>',  # Closing script tags
+        r'javascript:.*?(?=\s|$)',  # JavaScript protocol
+        
+        # Additional context manipulation
+        r'system\s+message:.*?$(?=\n|$)',  # "System message:" patterns (multiline)
+        r'system\s+message:.*?(?=\s|$)',  # "System message:" patterns (single line)
+        r'admin\s+mode.*?$(?=\n|$)',  # Admin mode override (multiline)
+        r'admin\s+mode.*?(?=\s|$)',  # Admin mode override (single line)
+        r'end\s+user\s+session.*?$(?=\n|$)',  # Session manipulation (multiline)
+        r'end\s+user\s+session.*?(?=\s|$)',  # Session manipulation (single line)
     ]
 
     for pattern in dangerous_patterns:
