@@ -129,13 +129,35 @@ def build_app():
                     logger.info(f"Messages to assistant tool_result: {tool_results}")
                     conversation_context = get_conversation_context(messages)
 
+                    # Extract user query and report type for context-aware interpretation
+                    user_query = ""
+                    report_type = None
+                    
+                    # Find the most recent human message (user query)
+                    for msg in reversed(messages):
+                        if isinstance(msg, HumanMessage):
+                            user_query = msg.content
+                            break
+                    
+                    # Extract report type from tool results if available
+                    for result in tool_results:
+                        if isinstance(result, dict) and result.get("report_type"):
+                            report_type = result["report_type"]
+                            break
+
                     # Validate inputs before calling LLM
                     if not tool_results:
                         raise ValueError("Empty tool_results")
                     
-                    # Create enhanced interpretation prompt with error handling
+                    # Create enhanced interpretation prompt with user query context
                     try:
-                        interpretation_prompt = create_interpretation_prompt(tool_results, context_insights)
+                        interpretation_prompt = create_interpretation_prompt(
+                            user_query=user_query,
+                            tool_results=tool_results, 
+                            report_type=report_type,
+                            context_insights=context_insights
+                        )
+                        logger.info(f"Context-aware interpretation for query: '{user_query[:50]}...' with report_type: '{report_type}'")
                         logger.info(f"Interpretation prompt length: {len(interpretation_prompt) if interpretation_prompt else 0}")
                         if not interpretation_prompt or len(interpretation_prompt.strip()) == 0:
                             raise ValueError("Empty interpretation prompt generated")

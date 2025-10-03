@@ -70,11 +70,18 @@ def get_conversation_context(messages: List) -> List:
     return context_messages
 
 
-def create_interpretation_prompt(tool_results: List[Dict[str, Any]], context_insights: List[str]) -> str:
-    """Create an enhanced interpretation prompt for the LLM with sanitized inputs."""
+def create_interpretation_prompt(user_query: str, tool_results: List[Dict[str, Any]], report_type: str = None, context_insights: List[str] = None) -> str:
+    """Create a context-aware interpretation prompt that aligns with the user's specific query intent."""
 
     # Build the interpretation prompt
     prompt_parts = []
+    
+    # Add user query context first for proper alignment
+    if user_query:
+        safe_user_query = sanitize_text_input(user_query, 200)
+        prompt_parts.append("USER QUERY:")
+        prompt_parts.append(f"└── {safe_user_query}")
+        prompt_parts.append("")
 
     # Add context insights with sanitization
     if context_insights:
@@ -109,14 +116,26 @@ def create_interpretation_prompt(tool_results: List[Dict[str, Any]], context_ins
             prompt_parts.append(f"│   ├── Raw content: {safe_content}...")
         prompt_parts.append("")
 
-    # Add interpretation instructions
-    prompt_parts.append("INTERPRETATION TASK:")
-    prompt_parts.append("├── Analyze the data and provide insights")
-    prompt_parts.append("├── Highlight key patterns, trends, or anomalies")
-    prompt_parts.append("├── Provide actionable recommendations if applicable")
-    prompt_parts.append("├── Use clear, conversational language")
-    prompt_parts.append("├── Keep the response very concise - limit to 3-4 sentences maximum")
-    prompt_parts.append("├── Focus only on the most critical findings and brief recommendations")
-    prompt_parts.append("└── Avoid detailed explanations or lengthy lists")
+    # Simplified LLM Interpretation: Let AI decide what related message should be replied
+    # Add intelligent context-aware interpretation instructions
+    prompt_parts.append("LLM INTERPRETATION TASK:")
+    prompt_parts.append("├── Analyze the data and determine what related message should be prioritized")
+    prompt_parts.append("├── CRITICAL: Always reference the exact file names and entities mentioned in the USER QUERY above")
+    prompt_parts.append("├── Let the AI intelligently decide the focus based on:")
+    prompt_parts.append("│   ├── User query intent and semantic meaning (match exact file names)")
+    prompt_parts.append("│   ├── Data patterns and significant findings")
+    prompt_parts.append("│   ├── Context relevance and user needs")
+    prompt_parts.append("│   └── Most appropriate response approach for this specific query")
+    prompt_parts.append("├── Adaptive Response Guidelines:")
+    prompt_parts.append("│   ├── Match tone and focus to user's specific query intent")
+    prompt_parts.append("│   ├── Prioritize insights that directly answer the user's question")
+    prompt_parts.append("│   ├── Use EXACT file names and entities from the USER QUERY (not examples, use the actual query)")
+    prompt_parts.append("│   ├── Use language style that aligns with the query context")
+    prompt_parts.append("│   └── Emphasize the most relevant data story for this specific query")
+    prompt_parts.append("├── Keep response concise but impactful - 3-4 sentences maximum")
+    prompt_parts.append("├── Focus on actionable insights that matter most to this query")
+    prompt_parts.append("└── Let the data and user intent guide the narrative direction")
 
     return "\n".join(prompt_parts)
+
+

@@ -10,6 +10,7 @@ from app.tools import (
 )
 from app.utils.report_type import get_report_type
 from app.utils.sanitization import sanitize_filename
+from app.config import OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -361,11 +362,13 @@ Please verify your file or domain references and try again.
                 if m.__class__.__name__ == 'AIMessage' and not getattr(m, 'tool_calls', None):
                     interpretation = m.content
                     break
-        logger.info(f"LLM interpretation1: {interpretation}")
+        logger.info(f"LLM interpretation: {interpretation}")
         
-        #Fallback if no interpretation found
+        # Fallback if no interpretation found - use basic formatting
         if not interpretation:
             from app.utils.formatting import format_basic_message
+            
+            logger.info(f"No interpretation found, using format_basic_message for query: '{prompt[:50]}...'")
             interpretation = format_basic_message(
                 chart_data=filtered_chart_data,
                 file_name=file_name or domain_name,
