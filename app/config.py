@@ -113,6 +113,15 @@ APP_PORT = int(os.getenv("APP_PORT", "8000"))
 REDIS_URL = os.getenv("REDIS_URL")
 USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
 
+# Responsible AI output filtering configuration
+ENABLE_PII_REDACTION = os.getenv("ENABLE_PII_REDACTION", "true").lower() == "true"
+ENABLE_SECRET_REDACTION = os.getenv("ENABLE_SECRET_REDACTION", "true").lower() == "true"
+INCLUDE_REDACTION_METADATA = os.getenv("INCLUDE_REDACTION_METADATA", "false").lower() == "true"
+ENABLE_JWT_REDACTION = os.getenv("ENABLE_JWT_REDACTION", "true").lower() == "true"
+ENABLE_URL_CREDENTIAL_REDACTION = os.getenv("ENABLE_URL_CREDENTIAL_REDACTION", "true").lower() == "true"
+ENABLE_BASE64_REDACTION = os.getenv("ENABLE_BASE64_REDACTION", "true").lower() == "true"
+BASE64_MIN_LEN = int(os.getenv("BASE64_MIN_LEN", "200"))
+
 # Session Management Configuration
 SESSION_TTL_HOURS = float(os.getenv("SESSION_TTL_HOURS", "0.25"))
 SESSION_COOKIE_MAX_AGE_HOURS = float(os.getenv("SESSION_COOKIE_MAX_AGE_HOURS", "0.25"))

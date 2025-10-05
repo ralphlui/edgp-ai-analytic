@@ -38,13 +38,13 @@ class AnalyticService:
             from app.utils.report_type import is_analytics_related
             is_analytics = await is_analytics_related(prompt)
 
-            if not is_analytics:
-                logger.info(f"Non-analytics query detected: '{prompt[:50]}...'")
-                return {
-                    "success": False,
-                    "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
-                    "chart_image": None
-                }
+            # if not is_analytics:
+            #     logger.info(f"Non-analytics query detected: '{prompt[:50]}...'")
+            #     return {
+            #         "success": False,
+            #         "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
+            #         "chart_image": None
+            #     }
 
             # Use unified hybrid classification (handles regex + LLM internally)
             report_type = await get_report_type(prompt)
@@ -362,7 +362,7 @@ Please verify your file or domain references and try again.
                 if m.__class__.__name__ == 'AIMessage' and not getattr(m, 'tool_calls', None):
                     interpretation = m.content
                     break
-        logger.info(f"LLM interpretation: {interpretation}")
+    # Note: Do not log raw interpretation before filtering to avoid leaking sensitive data
         
         # Fallback if no interpretation found - use basic formatting
         if not interpretation:
@@ -379,6 +379,45 @@ Please verify your file or domain references and try again.
                 original_chart_data=original_chart_data
             )
 
+        # Apply Responsible AI output filters (PII/secrets redaction)
+        redaction_stats = None
+        try:
+            from app.config import (
+                ENABLE_PII_REDACTION,
+                ENABLE_SECRET_REDACTION,
+                INCLUDE_REDACTION_METADATA,
+                ENABLE_JWT_REDACTION,
+                ENABLE_URL_CREDENTIAL_REDACTION,
+                ENABLE_BASE64_REDACTION,
+                BASE64_MIN_LEN,
+            )
+            from app.utils.responsible_ai import apply_responsible_output_filters, RedactionConfig
+
+            cfg = RedactionConfig(
+                enable_pii_redaction=ENABLE_PII_REDACTION,
+                enable_secret_redaction=ENABLE_SECRET_REDACTION,
+                enable_jwt_redaction=ENABLE_JWT_REDACTION,
+                enable_url_credential_redaction=ENABLE_URL_CREDENTIAL_REDACTION,
+                enable_base64_redaction=ENABLE_BASE64_REDACTION,
+                base64_min_len=BASE64_MIN_LEN,
+            )
+            filtered_text, redaction_stats = apply_responsible_output_filters(interpretation, cfg)
+            interpretation = filtered_text
+
+        except Exception as _filter_err:
+            # Don't fail the request if filtering fails; just log
+            logger.warning(f"Responsible output filtering failed: {_filter_err}")
+
+        # Safe logging after filtering
+        try:
+            if redaction_stats:
+                logger.info(f"Applied output redactions: {redaction_stats}")
+            # Log a truncated, filtered message
+            if isinstance(interpretation, str):
+                logger.info(f"Final message (filtered): {interpretation[:200]}...")
+        except Exception:
+            pass
+
 
         result = {
             "success": True,
@@ -389,6 +428,13 @@ Please verify your file or domain references and try again.
             "row_count": row_count,
             "report_type": final_report_type
         }
+
+        # Optionally include metadata about redactions for observability (no sensitive data included)
+        # try:
+        #     if INCLUDE_REDACTION_METADATA and 'redaction_stats' in locals() and redaction_stats:
+        #         result["redaction_stats"] = redaction_stats
+        # except Exception:
+        #     pass
 
 
         return result
