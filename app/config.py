@@ -110,10 +110,6 @@ MAX_AGENT_LOOPS = 10
 # Application port configuration
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
 
-# Redis configuration for session storage
-REDIS_URL = os.getenv("REDIS_URL")
-USE_REDIS_SESSIONS = os.getenv("USE_REDIS_SESSIONS", "false").lower() == "true"
-
 # Responsible AI output filtering configuration
 ENABLE_PII_REDACTION = os.getenv("ENABLE_PII_REDACTION", "true").lower() == "true"
 ENABLE_SECRET_REDACTION = os.getenv("ENABLE_SECRET_REDACTION", "true").lower() == "true"
@@ -126,7 +122,6 @@ BASE64_MIN_LEN = int(os.getenv("BASE64_MIN_LEN", "200"))
 # Session Management Configuration
 SESSION_TTL_HOURS = float(os.getenv("SESSION_TTL_HOURS", "0.25"))
 SESSION_COOKIE_MAX_AGE_HOURS = float(os.getenv("SESSION_COOKIE_MAX_AGE_HOURS", "0.25"))
-MEMORY_CLEANUP_INTERVAL_MINUTES = float(os.getenv("MEMORY_CLEANUP_INTERVAL_MINUTES", "5"))
 MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
 
 # System prompt components

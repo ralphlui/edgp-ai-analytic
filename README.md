@@ -184,7 +184,6 @@ edgp-ai-analytic/
 │   │   └── graph_builder.py       # LangGraph workflow builder
 │   ├── services/             # External service integrations
 │   │   ├── database_service.py    # DynamoDB operations
-│   │   ├── memory_service.py      # Session/conversation management
 │   │   └── query_coordinator.py   # Request orchestration
 │   ├── tools/                # LangGraph tools
 │   │   ├── domain_analytics_tools.py  # Domain-specific analytics

@@ -34,18 +34,6 @@ class AnalyticService:
         Returns a dict with keys: success (bool), message (str), chart_image (str base64)
         """
         try:
-            # First check if the query is analytics-related
-            from app.utils.report_type import is_analytics_related
-            is_analytics = await is_analytics_related(prompt)
-
-            if not is_analytics:
-                logger.info(f"Non-analytics query detected: '{prompt[:50]}...' - ignoring conversation history")
-                return {
-                    "success": False,
-                    "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
-                    "chart_image": None
-                }
-
             # Use unified hybrid classification (handles regex + LLM internally)
             report_type = await get_report_type(prompt)
             
@@ -109,7 +97,7 @@ CONVERSATION CONTEXT:
 
 CRITICAL: PRIORITIZE CURRENT USER PROMPT
 - ALWAYS analyze and respond to the CURRENT user prompt first and foremost
-- If current prompt is NOT analytics-related, completely IGNORE conversation history and provide a clean non-analytics response
+- If current prompt is NOT analytics-related (e.g., general conversation, coding questions, weather, news, etc.), respond with: "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?"
 - For analytics queries: Conversation history is provided for context ONLY - do not let it override current request
 - If current prompt is different from previous requests, follow the current prompt completely
 - Only use conversation history to fill in gaps when current prompt is incomplete AND analytics-related

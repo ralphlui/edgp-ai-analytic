@@ -61,7 +61,7 @@ class QueryCoordinator:
     reference resolution to memory service and LLM.
     """
 
-    def __init__(self, redis_url: str = None):
+    def __init__(self):
         # Stateless; conversation history is stored in DynamoDB by user_id.
         self._analytic_service = AnalyticService()
 
@@ -128,7 +128,7 @@ class QueryCoordinator:
             self._store_interaction_result(user_id, safe_prompt, result)
 
             # 7) Log for debug
-            self._log_debug_info(safe_prompt, result)
+            #(safe_prompt, result)
 
             return {
                 "success": result.get("success", False),
