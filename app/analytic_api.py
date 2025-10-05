@@ -16,8 +16,6 @@ from pydantic import ValidationError
 
 from app.auth import bearer_scheme
 from app.services.query_coordinator import QueryCoordinator, PromptRequest
-from app.services.memory import memory_manager, RedisSessionStorage
-from app.config import USE_REDIS_SESSIONS, REDIS_URL
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -25,59 +23,15 @@ logger = logging.getLogger("analytic_agent")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle application startup and shutdown events."""
-    # Initialize redis_storage locally to avoid undefined variable errors
-    redis_storage = None
-    
-    # Startup
-    logger.info("🚀 Starting Analytic Agent API...")
-    
-    # Initialize Redis storage if configured
-    if USE_REDIS_SESSIONS and REDIS_URL:
-        try:
-            redis_storage = RedisSessionStorage(REDIS_URL)
-            if hasattr(redis_storage, 'available') and redis_storage.available:
-                logger.info("✅ Application started with Redis session storage")
-                logger.info("📝 Redis sessions use TTL-based cleanup (no scheduler needed)")
-            else:
-                logger.info("⚠️  Redis unavailable, using memory storage")
-                redis_storage = None
-        except Exception as e:
-            logger.warning(f"Redis connection failed: {e}")
-            logger.info("📝 Application started with memory session storage")
-            redis_storage = None
-    else:
-        logger.info("📝 Application started with memory session storage")
-    
-    # Start memory cleanup task (always needed for memory storage fallback)
-    memory_manager.start_cleanup_task()
-    
+    """Handle application startup and shutdown events (stateless)."""
+    logger.info("� Starting Analytic Agent API (stateless)...")
     yield
-    
-    # Shutdown - Clean up resources
-    logger.info("🛑 Shutting down Analytic Agent API...")
-    
-    # Stop memory cleanup task
-    memory_manager.stop_cleanup_task()
-    
-    # Log final session information
-    if redis_storage and hasattr(redis_storage, 'available') and redis_storage.available:
-        try:
-            info = redis_storage.get_session_info()
-            session_count = info.get("total_sessions", 0)
-            logger.info(f"💾 {session_count} Redis sessions will auto-expire via TTL (24h)")
-        except Exception as e:
-            logger.warning(f"Error getting Redis session info: {e}")
-    else:
-        stats = memory_manager.get_memory_stats()
-        logger.info(f"💾 {stats['total_sessions']} memory sessions cleaned up automatically")
-    
     logger.info("✅ Shutdown complete")
 
 # Create FastAPI app with lifespan handler
 app = FastAPI(
     title="Analytic Agent API",
-    description="Scalable analytic agent with session management",
+    description="Scalable analytic agent (stateless, DynamoDB conversation history)",
     version="2.0.0",
     lifespan=lifespan
 )

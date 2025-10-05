@@ -102,12 +102,21 @@ def build_app():
                 logger.debug(f"Message {i}: {type(msg).__name__} - {'has tool_calls' if hasattr(msg, 'tool_calls') and msg.tool_calls else 'no tool_calls'}")
 
             # Process tool results with enhanced interpretation
+            # Only use tool results from the current turn (after the latest user message)
             has_tool_results = False
             tool_results = []
             context_insights = []
 
-            for msg in messages:
-                if isinstance(msg, ToolMessage):
+            # Find the index of the latest HumanMessage
+            latest_human_index = -1
+            for i in reversed(range(len(messages))):
+                if isinstance(messages[i], HumanMessage):
+                    latest_human_index = i
+                    break
+
+            # Only process ToolMessages that come after the latest HumanMessage
+            for i, msg in enumerate(messages):
+                if isinstance(msg, ToolMessage) and i > latest_human_index:
                     has_tool_results = True
                     try:
                         logger.debug(f"Processing tool message: {msg.tool_call_id}")

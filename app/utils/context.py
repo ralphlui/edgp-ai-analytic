@@ -60,8 +60,8 @@ def get_conversation_context(messages: List) -> List:
 
     context_messages = []
 
-    # Get last 5 messages for context (excluding current message)
-    recent_messages = messages[-6:-1] if len(messages) > 1 else []
+    # Get last 10 messages for context (excluding current message)
+    recent_messages = messages[-10:-1] if len(messages) > 1 else []
 
     for msg in recent_messages:
         if isinstance(msg, (HumanMessage, AIMessage)):

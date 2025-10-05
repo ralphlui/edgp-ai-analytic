@@ -10,79 +10,60 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
 
 from app.core.analytic_service import AnalyticService
-from app.services.memory import memory_service, RedisSessionStorage
+from app.services.memory import dynamo_conversation
 from app.auth import validate_user_profile_with_response
 from app.utils.sanitization import sanitize_text_input
-from app.utils.request_context import (
-    set_tenant_context,
-    reset_tenant_context
-)
-from app.tools import bind_session_to_tenant, unbind_session
-from app.config import USE_REDIS_SESSIONS, REDIS_URL, SESSION_COOKIE_MAX_AGE_HOURS
+from app.config import SESSION_COOKIE_MAX_AGE_HOURS
+from app.utils.request_context import set_tenant_context, reset_tenant_context
+from app.tools.session_manager import bind_session_to_tenant, unbind_session
 
 # Constants
-SESSION_COOKIE_MAX_AGE = SESSION_COOKIE_MAX_AGE_HOURS * 3600  # Convert hours to seconds
-SESSION_ID_PREFIX_LENGTH = 8
+SESSION_COOKIE_MAX_AGE = SESSION_COOKIE_MAX_AGE_HOURS * 3600  # Convert hours to seconds (unused after session removal)
+SESSION_ID_PREFIX_LENGTH = 8  # For log truncation when needed
 
 logger = logging.getLogger("analytic_agent")
+
 
 class PromptRequest(BaseModel):
     prompt: str
     session_id: str | None = None
-    
+
     @field_validator('prompt')
     @classmethod
     def validate_prompt(cls, v):
         """Validate prompt input for basic security checks."""
         if not v or not v.strip():
             raise ValueError('Prompt cannot be empty')
-        
+
         if len(v) > 5000:
             raise ValueError('Prompt too long (max 5000 characters)')
-        
+
         # Check for obviously malicious patterns (before full sanitization)
         dangerous_indicators = [
             'system:', 'assistant:', 'user:', 'human:', 'ai:',
             'ignore previous', 'forget previous', 'disregard',
             'you are now', 'your role is', 'act as', 'pretend to be',
-            'execute:', 'run:', 'rm -rf', '\\n\\n', '%0A%0A',
+            'execute:', 'run:', 'rm -rf', '\n\n', '%0A%0A',
             '[inst]', '[/inst]', '<|', '|>', '{{', '}}'
         ]
-        
+
         v_lower = v.lower()
         for indicator in dangerous_indicators:
             if indicator in v_lower:
                 raise ValueError(f'Potentially malicious content detected: {indicator}')
-        
+
         return v
+
 
 class QueryCoordinator:
     """
-    Simplified coordinator that focuses on security and delegates 
+    Simplified coordinator that focuses on security and delegates
     reference resolution to memory service and LLM.
-    Now with optional Redis session storage for production scalability.
     """
 
     def __init__(self, redis_url: str = None):
+        # Stateless; conversation history is stored in DynamoDB by user_id.
         self._analytic_service = AnalyticService()
-        
-        # Initialize session storage based on configuration flag
-        if USE_REDIS_SESSIONS:
-            self.redis_storage = RedisSessionStorage(redis_url or REDIS_URL)
-            if self.redis_storage.available:
-                logger.info("QueryCoordinator initialized with Redis session storage (USE_REDIS_SESSIONS=true)")
-            else:
-                logger.warning("USE_REDIS_SESSIONS=true but Redis unavailable, falling back to memory")
-        else:
-            self.redis_storage = None
-            logger.info("QueryCoordinator initialized with memory session storage (USE_REDIS_SESSIONS=false)")
-    
-    def _get_session_storage(self):
-        """Get the appropriate session storage based on config flag and Redis availability."""
-        if USE_REDIS_SESSIONS and self.redis_storage and self.redis_storage.available:
-            return self.redis_storage
-        else:
-            return memory_service
 
     async def process_query(
         self,
@@ -93,81 +74,67 @@ class QueryCoordinator:
     ) -> Dict[str, Any]:
         """
         Process analytic query with simplified reference handling.
-        
+
         SECURITY FEATURES:
         - JWT enforcement (only trusts orgId from JWT claims)
-        - Secure session handling with HttpOnly+Secure+SameSite cookies
-        - Session binding with tenant verification
+        - No server-side sessions; history is retrieved by user_id from DynamoDB
         """
-
-        session_id = None
-        tenant_tokens = None
+        user_id = None
+        context_tokens = None
+        req_session_id = None
 
         try:
             # 1) SECURITY: JWT validation and user profile verification
             auth_result = await validate_user_profile_with_response(credentials)
-            if not auth_result["success"]:
-                logger.warning(f"Authentication failed: {auth_result['message']}")
-                return auth_result  # Return structured error response
-            
+            if not auth_result.get("success"):
+                logger.warning(f"Authentication failed: {auth_result.get('message')}")
+                return auth_result  # Structured error
+
             user = auth_result["payload"]
             user_id = user.get("sub")
             org_id = user.get("orgId")
-            
             if not user_id or not org_id:
                 raise ValueError("JWT missing required claims: sub (user_id) or orgId")
-            
-            logger.info(f"JWT validated and user profile verified - user: {user_id[:8]}..., org: {org_id[:8]}...")
 
-            # 2) SECURITY: Resolve secure session ID
-            session_id = await self._resolve_secure_session_id(request, http_request, user_id)
-            
-            # 3) SECURITY: Set tenant context
-            tenant_tokens = set_tenant_context(org_id, user_id, session_id)
-            
-            # 4) SECURITY: Bind session to tenant
-            bind_success = bind_session_to_tenant(session_id, user_id, org_id)
-            if not bind_success:
-                raise ValueError("Failed to bind session to tenant")
+            logger.info(f"JWT validated - user: {user_id[:8]}..., org: {org_id[:8]}...")
 
-            # 5) Get conversation history
-            session_storage = self._get_session_storage()
-            if hasattr(session_storage, 'get_session'):
-                # Using Redis storage
-                session_data = session_storage.get_session(session_id)
-                conversation_history = session_data.get("interactions", []) if session_data else []
-            else:
-                # Using memory storage
-                conversation_history = session_storage.get_conversation_history(session_id)
+            # 2) Bind tenant context for downstream tools (contextvars)
+            req_session_id = request.session_id or f"req-{int(time.time()*1000)}-{user_id[:8]}"
+            try:
+                context_tokens = set_tenant_context(org_id=org_id, user_id=user_id, session_id=req_session_id)
+            except Exception as _ctx_err:
+                logger.warning(f"Failed to set tenant context: {_ctx_err}")
 
-            # 6) SECURITY: Sanitize user input to prevent prompt injection
+            # Also bind session for legacy fallback used by some utilities
+            try:
+                bind_session_to_tenant(req_session_id, user_id, org_id)
+            except Exception as _bind_err:
+                logger.debug(f"Session bind fallback failed: {_bind_err}")
+
+            # 3) Get conversation history (DynamoDB by user_id)
+            conversation_history = dynamo_conversation.get_conversation_history(user_id)
+
+            # 4) Sanitize input
             safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
-            logger.debug(f"Sanitized prompt for session {session_id[:8]}...")
 
-            # 7) Set session cookie
-            self._set_session_cookie(response, session_id)
-
-            # 8) Execute analytic query (LLM handles complex reference resolution)
+            # 5) Execute analytic query
             result = await self._analytic_service.process_query(
                 prompt=safe_prompt,
-                session_id=session_id,
+                user_id=user_id,
                 conversation_history=conversation_history
             )
 
-            # 9) Store interaction result (use original prompt for logging accuracy)
-            self._store_interaction_result(session_id, safe_prompt, result)
+            # 6) Persist interaction
+            self._store_interaction_result(user_id, safe_prompt, result)
 
-            # 10) Log debug information
-            self._log_debug_info(session_id, safe_prompt, result)
+            # 7) Log for debug
+            self._log_debug_info(safe_prompt, result)
 
-            final_result = {
-            "success": result.get("success", False),
-            "message": result.get("message", ""),
-            "chart_image": result.get("chart_image")
-        }
-
-
-            return final_result
+            return {
+                "success": result.get("success", False),
+                "message": result.get("message", ""),
+                "chart_image": result.get("chart_image")
+            }
 
         except (ValidationError, ValueError) as e:
             logger.warning(f"Validation error: {e}")
@@ -178,151 +145,40 @@ class QueryCoordinator:
 
         except Exception as error:
             logger.exception(f"Query processing failed: {error}")
-            if session_id:
-                # Use sanitized prompt for error logging too
-                safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
-                self._store_error_interaction(session_id, safe_prompt, error)
+            safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
+            self._store_error_interaction(user_id, safe_prompt, error)
             return self._create_error_response("Processing failed", str(error))
 
         finally:
-            # Cleanup
-            info = memory_service.get_session_info()
-            print("Session Info in memory:", info)
-            if tenant_tokens:
-                reset_tenant_context(tenant_tokens)
-            if session_id:
-                unbind_session(session_id)
-                logger.debug(f"Cleaned up session {session_id[:8]}...")
-                
-
-    async def _resolve_secure_session_id(
-        self, 
-        request: PromptRequest, 
-        http_request: Request, 
-        user_id: str
-    ) -> str:
-        """Resolve and validate secure session ID with Redis or memory storage."""
-        # Check for existing session cookie
-        session_id = http_request.cookies.get("analytic_session_id")
-        
-        # Generate new session if needed
-        if not session_id or len(session_id) < 32:
-            session_id = self._generate_secure_session_id(user_id)
-            logger.info(f"Generated new session for user {user_id[:8]}...: {session_id[:8]}...")
-        else:
-            logger.debug(f"Using existing session: {session_id[:8]}...")
-        
-        # Ensure session exists using appropriate storage
-        session_storage = self._get_session_storage()
-        
-        if hasattr(session_storage, 'get_session'):
-            # Using Redis storage
-            session_data = session_storage.get_session(session_id)
-            if not session_data:
-                new_session_id = session_storage.create_session(user_id)
-                session_id = new_session_id
-                logger.info(f"Created Redis session for {session_id[:8]}...")
-            else:
-                # Reset TTL on each interaction to keep active sessions alive
-                session_storage.touch_session(session_id)
-                logger.debug(f"Found existing Redis session for {session_id[:8]}...")
-        else:
-            # Using memory storage (fallback)
-            session_context = session_storage.get_session_context(session_id)
-            if not session_context:
-                created_session_id = session_storage.create_session(user_id)
-                if created_session_id != session_id:
-                    session_id = created_session_id
-                logger.info(f"Created memory session for {session_id[:8]}...")
-            else:
-                # Reset TTL on each interaction (matching Redis behavior)
-                if hasattr(session_storage, 'touch_session'):
-                    session_storage.touch_session(session_id)
-                logger.debug(f"Found existing memory session context for {session_id[:8]}...")
-        
-        return session_id
-    
-    def _generate_secure_session_id(self, user_id: str) -> str:
-        """Generate cryptographically secure session ID."""
-        import secrets
-        import hashlib
-        
-        random_data = secrets.token_bytes(32)
-        timestamp = str(time.time()).encode()
-        user_data = user_id.encode()
-        
-        hash_input = random_data + timestamp + user_data
-        session_hash = hashlib.sha256(hash_input).hexdigest()
-        
-        return f"sess_{session_hash[:48]}"
-    
-    def _set_session_cookie(self, response: Response, session_id: str) -> None:
-        """Set secure session cookie."""
-        response.set_cookie(
-            key="analytic_session_id",
-            value=session_id,
-            max_age=SESSION_COOKIE_MAX_AGE,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-        )
+            # Reset tenant context and unbind session fallback
+            try:
+                if context_tokens:
+                    reset_tenant_context(context_tokens)
+            except Exception:
+                pass
+            try:
+                if req_session_id:
+                    unbind_session(req_session_id)
+            except Exception:
+                pass
 
     def _store_interaction_result(
-        self, 
-        session_id: str, 
-        original_prompt: str, 
+        self,
+        user_id: str,
+        original_prompt: str,
         result: Dict[str, Any]
     ) -> None:
-        """Store interaction result using Redis or memory storage."""
+        """Store interaction result using DynamoDB conversation storage keyed by user_id."""
         try:
-            tool_name = result.get("tool_name", "analytic_query")
-            session_storage = self._get_session_storage()
-            print(f"'Using session storage result: {result}")
-            
-            if hasattr(session_storage, 'get_session'):
-                # Using Redis storage - need to implement interaction storage
-                session_data = session_storage.get_session(session_id)
-                if session_data:
-                    # Add interaction to session data
-                    interaction = {
-                        "timestamp": time.time(),
-                        "user_prompt": original_prompt,
-                        "tool_used": tool_name,
-                        "response_summary": {
-                            "success": result.get("success", False),
-                            "tool": result.get("tool"),
-                            "file_name": result.get("file_name"),
-                            "domain_name": result.get("domain_name"),
-                            "row_count": result.get("row_count", 0),
-                            "report_type": result.get("report_type", "both"),
-                            "message": result.get("message", "")[:200]  # Truncate
-                        }
-                    }
-                    
-                    # Maintain history limit (20 interactions - matching memory storage)
-                    interactions = session_data.get("interactions", [])
-                    interactions.append(interaction)
-                    if len(interactions) > 10:
-                        # Remove oldest interactions to maintain limit
-                        interactions = interactions[-10:]
-
-                    session_data["interactions"] = interactions
-                    session_storage.update_session(session_id, session_data)
-                    logger.debug(f"Stored interaction in Redis for session {session_id[:8]}...")
-                else:
-                    logger.warning(f"Session {session_id[:8]} not found in Redis for interaction storage")
-            else:
-                # Using memory storage
-                session_storage.store_interaction(session_id, original_prompt, tool_name, result)
-                logger.debug(f"Stored interaction in memory for session {session_id[:8]}...")
-                
+            tool_name = result.get("tool") or result.get("tool_name") or "analytic_query"
+            dynamo_conversation.store_interaction(user_id, original_prompt)
         except Exception as e:
             logger.warning(f"Failed to store interaction: {e}")
 
     def _store_error_interaction(
-        self, 
-        session_id: str, 
-        prompt: str, 
+        self,
+        user_id: str | None,
+        prompt: str,
         error: Exception
     ) -> None:
         """Store error interaction using current storage type."""
@@ -332,60 +188,24 @@ class QueryCoordinator:
                 "error": str(error),
                 "error_type": type(error).__name__
             }
-            
-            # Use the same storage type as the rest of the session
-            session_storage = self._get_session_storage()
-            
-            if hasattr(session_storage, 'get_session'):
-                # Using Redis storage - store error in session data
-                session_data = session_storage.get_session(session_id)
-                if session_data:
-                    interaction = {
-                        "timestamp": time.time(),
-                        "user_prompt": prompt,
-                        "tool_used": "error",
-                        "response_summary": error_result
-                    }
-                    
-                    interactions = session_data.get("interactions", [])
-                    interactions.append(interaction)
-                    if len(interactions) > 20:
-                        interactions = interactions[-20:]
-                    
-                    session_data["interactions"] = interactions
-                    session_storage.update_session(session_id, session_data)
-                    logger.debug(f"Stored error interaction in Redis for session {session_id[:8]}...")
-                else:
-                    logger.warning(f"Session {session_id[:8]} not found in Redis for error storage")
-            else:
-                # Using memory storage
-                session_storage.store_interaction(session_id, prompt, "error", error_result)
-                logger.debug(f"Stored error interaction in memory for session {session_id[:8]}...")
-                
+            if user_id:
+                dynamo_conversation.store_interaction(user_id, prompt, "error", error_result)
         except Exception as e:
             logger.warning(f"Failed to store error interaction: {e}")
-            # Fallback to memory storage if all else fails
-            try:
-                memory_service.store_interaction(session_id, prompt, "error", {"success": False, "error": str(error)})
-            except:
-                pass  # Silent fallback failure
 
-    def _log_debug_info(
-        self, 
-        session_id: str, 
-        original_prompt: str, 
-        result: Dict[str, Any]
-    ) -> None:
-        """Log debug information if debug logging is enabled."""
-        if logger.isEnabledFor(logging.DEBUG):
-            session_prefix = session_id[:SESSION_ID_PREFIX_LENGTH]
-            logger.debug(f"Session {session_prefix} - Original: '{original_prompt[:50]}...'")
-            logger.debug(f"Session {session_prefix} - Success: {result.get('success', False)}")
-            
-            if result.get("file_name"):
-                logger.debug(f"Session {session_prefix} - File: {result['file_name']}")
-            if result.get("domain_name"):
-                logger.debug(f"Session {session_prefix} - Domain: {result['domain_name']}")
+    # def _log_debug_info(
+    #     self,
+    #     original_prompt: str,
+    #     result: Dict[str, Any]
+    # ) -> None:
+    #     """Log debug information if debug logging is enabled."""
+    #     if logger.isEnabledFor(logging.DEBUG):
+    #         logger.debug(f"Prompt: '{original_prompt[:50]}...'")
+    #         logger.debug(f"Success: {result.get('success', False)}")
+    #         if result.get("file_name"):
+    #             logger.debug(f"File: {result['file_name']}")
+    #         if result.get("domain_name"):
+    #             logger.debug(f"Domain: {result['domain_name']}")
 
     def _create_error_response(self, error_type: str, details: str) -> Dict[str, Any]:
         """Create standardized error response."""

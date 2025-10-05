@@ -6,7 +6,8 @@ import json
 import logging
 import concurrent.futures
 from typing import Optional, Dict, Any, Callable, Awaitable
-from app.utils.request_context import get_current_org_id
+from app.utils.request_context import get_current_org_id, get_current_session_id
+import contextvars
 
 logger = logging.getLogger("tool_utils")
 
@@ -46,15 +47,17 @@ def get_org_id_for_tool() -> Optional[str]:
     """
     # Try context variables first
     captured_org_id = get_current_org_id()
+    logger.debug(f"Captured org_id from contextvars: {captured_org_id}")
     
     if captured_org_id is None:
-        # Try session bindings as fallback
-        session_bindings = get_session_bindings()
-        for session_id, binding in session_bindings.items():
+        # Try session bindings as fallback, but only for the current session id
+        session_id = get_current_session_id()
+        if session_id:
+            session_bindings = get_session_bindings()
+            binding = session_bindings.get(session_id)
             if binding and binding.get("org_id"):
                 captured_org_id = binding["org_id"]
-                logger.info(f"Using org_id from session binding: {captured_org_id}")
-                break
+                logger.info(f"Using org_id from session binding for session {session_id[:8]}...")
     
     return captured_org_id
 
@@ -83,6 +86,9 @@ def execute_async_tool_call(
     Execute async database calls with proper event loop handling.
     Reuses thread pool for better performance.
     """
+    # Capture current contextvars so org_id/user_id/session_id propagate into thread
+    _ctx = contextvars.copy_context()
+
     def run_async_db_call():
         """Run the async database call in a new event loop"""
         new_loop = asyncio.new_event_loop()
@@ -98,10 +104,10 @@ def execute_async_tool_call(
         # Try to get the current event loop
         current_loop = asyncio.get_running_loop()
         # If we're in an async context, run in a thread to avoid blocking
-        result = _thread_pool.submit(run_async_db_call).result()
+        result = _thread_pool.submit(lambda: _ctx.run(run_async_db_call)).result()
     except RuntimeError:
         # No event loop running, we can call the async function directly
-        result = run_async_db_call()
+        result = _ctx.run(run_async_db_call)
     
     return result
 

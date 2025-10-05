@@ -61,9 +61,9 @@ def get_domain_analytics_by_field_tool(
     
     # Get org_id from context using shared utility
     captured_org_id = get_org_id_for_tool()
-    if captured_org_id is None:
-        logger.error("No org_id available from context variables or session bindings")
-        return create_auth_error_response(return_as_json=True)
+    # if captured_org_id is None:
+    #     logger.error("No org_id available from context variables or session bindings")
+    #     return create_auth_error_response(return_as_json=True)
     
     try:
         # Execute database call using shared utility
@@ -127,9 +127,9 @@ def analyze_query_for_domain_analytics_tool(
         
         # Get org_id from context
         captured_org_id = get_org_id_for_tool()
-        if captured_org_id is None:
-            logger.error("No org_id available from context variables or session bindings")
-            return create_auth_error_response(return_as_json=True)
+        # if captured_org_id is None:
+        #     logger.error("No org_id available from context variables or session bindings")
+        #     return create_auth_error_response(return_as_json=True)
         
         logger.info("Parsed query - domain: %s, group_by: %s, chart: %s", domain_name, group_by_field, chart_type)
         

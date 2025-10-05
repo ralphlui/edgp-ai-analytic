@@ -590,10 +590,13 @@ class DatabaseService:
         try:
             # Build filter expression for the specified domain
             filter_expr = boto3.dynamodb.conditions.Attr('domain_name').eq(domain_name)
-            filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('organization_id').eq(org_id)
+            #filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('organization_id').eq(org_id)
             
             self.logger.info("Querying %s analytics grouped by %s for org_id: %s", domain_name, group_by_field, org_id)
             
+            if org_id:
+                filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('organization_id').eq(org_id)
+                self.logger.info("Added org_id filter: %s", org_id)
             # Add date filtering if provided
             if start_date:
                 filter_expr = filter_expr & boto3.dynamodb.conditions.Attr('created_date').gte(start_date)

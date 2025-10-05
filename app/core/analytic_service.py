@@ -22,7 +22,7 @@ class AnalyticService:
     TOOLS = ANALYSIS_TOOLS
 
     @staticmethod
-    async def process_query(prompt: str, session_id: str = None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def process_query(prompt: str, user_id: str = None, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Main entry point for processing analytic queries with enhanced reference resolution.
         
@@ -38,13 +38,13 @@ class AnalyticService:
             from app.utils.report_type import is_analytics_related
             is_analytics = await is_analytics_related(prompt)
 
-            # if not is_analytics:
-            #     logger.info(f"Non-analytics query detected: '{prompt[:50]}...'")
-            #     return {
-            #         "success": False,
-            #         "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
-            #         "chart_image": None
-            #     }
+            if not is_analytics:
+                logger.info(f"Non-analytics query detected: '{prompt[:50]}...' - ignoring conversation history")
+                return {
+                    "success": False,
+                    "message": "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?",
+                    "chart_image": None
+                }
 
             # Use unified hybrid classification (handles regex + LLM internally)
             report_type = await get_report_type(prompt)
@@ -59,7 +59,7 @@ class AnalyticService:
             return await AnalyticService.process_query_with_report_type(
                 prompt=prompt,
                 report_type=report_type,
-                session_id=session_id,
+                user_id=user_id,
                 conversation_history=conversation_history
             )
 
@@ -96,7 +96,7 @@ class AnalyticService:
         return filtered_data
 
     @staticmethod
-    def _create_enhanced_system_message(current_date: str, reference_context: str, conversation_insights: str) -> str:
+    def _create_enhanced_system_message(current_date: str, conversation_insights: str) -> str:
         """Create comprehensive system message with reference resolution instructions."""
         from app.config import SYSTEM
         
@@ -104,17 +104,48 @@ class AnalyticService:
         
         enhanced_instructions = f"""
 
-REFERENCE RESOLUTION INSTRUCTIONS:
-When users refer to "that file", "it", "the data", "that domain", or similar pronouns/references, 
-use the context below to resolve these references to specific file names or domains.
-
-{reference_context}
-
 CONVERSATION CONTEXT:
 {conversation_insights}
 
-IMPORTANT: When selecting tools and parameters, always resolve ambiguous references to specific 
-file names or domain names based on the context above. If a reference is unclear, ask for clarification.
+CRITICAL: PRIORITIZE CURRENT USER PROMPT
+- ALWAYS analyze and respond to the CURRENT user prompt first and foremost
+- If current prompt is NOT analytics-related, completely IGNORE conversation history and provide a clean non-analytics response
+- For analytics queries: Conversation history is provided for context ONLY - do not let it override current request
+- If current prompt is different from previous requests, follow the current prompt completely
+- Only use conversation history to fill in gaps when current prompt is incomplete AND analytics-related
+
+IMPORTANT GUIDELINES FOR TOOL USE:
+- This system supports TWO types of analysis:
+  1. SUCCESS/FAILURE RATE ANALYSIS: Requires file_name/domain_name + report_type ('success'/'failure'/'both')
+  2. DOMAIN DISTRIBUTION ANALYSIS: Shows "how many [domain] by [column]" - only needs domain_name (no report_type needed)
+
+- SMART CLARIFICATION RULES (based on CURRENT prompt):
+  * If current prompt has NO success/fail keywords AND NO file/domain names → Ask user to specify what they want to analyze
+  * If current prompt says only "success" or "failure" → Ask which file or domain they want analyzed
+  * If current prompt says only "customer.csv" or "customer domain" → Ask if they want success/failure rates OR domain distribution
+  * If current prompt uses VAGUE REFERENCES like "previous", "that", "this domain", "this file" → Ask user to specify exactly which domain/file they mean
+  * If current prompt says "how many [domain] by [column]" → Proceed directly with domain analysis (no success/failure needed)
+  * If current prompt provides complete context (has both analysis type AND target) → Proceed directly without asking
+  * Use conversation history ONLY for incomplete current prompts, not to override clear current requests
+
+- TOOL SELECTION PRIORITY:
+  * If user mentions file extensions (.csv, .json, .xlsx) or specific filenames → Use FILE-based analysis tools
+  * If user mentions domain names without file extension → Use DOMAIN-based analysis tools
+  * Keywords "success", "failure", "rate" → Use success/failure analysis tools  
+  * Keywords "how many", "by country", "by category", "distribution" → Use domain distribution tools
+
+- EXAMPLES:
+  * "show me data" → ASK FOR CLARIFICATION (no file/domain, no analysis type)
+  * "generate report" → ASK FOR CLARIFICATION (no file/domain, no analysis type)  
+  * "customer.csv" → ASK what type of analysis (file provided, but analysis type unclear)
+  * "success rate" → ASK which file/domain (analysis type provided, but target unclear)
+  * "success rate for that file" → ASK which specific file (vague reference)
+  * "analyze the previous domain" → ASK which specific domain (vague reference)
+  * "show me this data" → ASK which specific file/domain (vague reference)
+  * "success rate for customer.csv" → PROCEED with file success/failure analysis
+  * "how many customers by country" → PROCEED with domain distribution analysis
+
+- For chart_type: Choose automatically based on data type, or use user-specified type.
 """
         
         return base_system + enhanced_instructions
@@ -154,7 +185,7 @@ file names or domain names based on the context above. If a reference is unclear
         return "\n".join(insights) if insights else "No significant previous interactions."
 
     @staticmethod
-    async def process_query_with_report_type(prompt: str, report_type: str, session_id: str = None,
+    async def process_query_with_report_type(prompt: str, report_type: str, user_id: str = None,
                                            conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Process analytic query with enhanced LLM context and reference resolution.
@@ -166,10 +197,10 @@ file names or domain names based on the context above. If a reference is unclear
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
             from datetime import date
-            from app.services.memory import memory_service
 
             logger.info(f"Processing prompt: '{prompt[:100]}...'")
             logger.info(f"Report type: '{report_type}'")
+            logger.info(f"conversation_history type: '{conversation_history}'")
 
             app_graph = build_app()
 
@@ -180,29 +211,31 @@ file names or domain names based on the context above. If a reference is unclear
         current_date = date.today().strftime('%Y-%m-%d')
 
         # Get reference context from memory service
-        reference_context = memory_service.get_reference_context_for_llm(session_id) if session_id else ""
-        print(f"Reference context for LLM: {reference_context}")
-        
         # Extract conversation insights
-        conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
-        print(f"Conversation insights for LLM: {conversation_insights}")
-        print(f"Conversation conversation_history for LLM: {conversation_history}")
+        # conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
+        # print(f"Conversation insights for LLM: {conversation_insights}")
+        # print(f"Conversation conversation_history for LLM: {conversation_history}")
 
         # Create enhanced system message with reference resolution
+        #conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
         system_message = AnalyticService._create_enhanced_system_message(
-            current_date, reference_context, conversation_insights
+            current_date, conversation_history
         )
         
         messages = [SystemMessage(content=system_message)]
+        logger.info("Added conversation insights to context")
 
         # Add simplified conversation history
         if conversation_history:
-            recent_interactions = conversation_history[-2:]  # Reduced to avoid context overload
+            recent_interactions = conversation_history[-10:] 
+            logger.info(f"Reduced conversation history to last 10 interactions: {recent_interactions}")
             
             for interaction in recent_interactions:
                 if interaction.get("user_prompt"):
                     safe_prompt = sanitize_text_input(interaction['user_prompt'], 150)
                     messages.append(HumanMessage(content=safe_prompt))
+                    logger.info(f"Added user prompt to message: '{messages}...'")
+
                 
                 # Skip adding previous response summaries to avoid misleading the LLM
                 # The LLM should focus on the current query rather than cached summaries
@@ -215,14 +248,7 @@ file names or domain names based on the context above. If a reference is unclear
         # Note: Don't pass pre-classified report_type to LLM - let LLM decide based on prompt
         state = {
             "messages": messages,
-            "session_id": session_id,
-            
-            # Add processing hints for LLM
-            "processing_context": {
-                "has_reference_context": bool(reference_context),
-                "conversation_length": len(conversation_history or []),
-                "current_date": current_date
-            }
+            "user_id": user_id,
         }
 
         loop = asyncio.get_running_loop()
@@ -258,6 +284,7 @@ Please verify your file or domain references and try again.
         row_count = 0
         date_filter_used = None
         chart_type = "bar"
+        chart_type_source = "default"  # one of: default, auto, requested
         llm_detected_report_type = None  # Track LLM-detected report type
 
         for m in compiled_result.get("messages", []):
@@ -267,6 +294,7 @@ Please verify your file or domain references and try again.
                     try:
                         tool_data = json.loads(m.content) if isinstance(m.content, str) else m.content
                         tool_results.append(tool_data)
+                        logger.info(f"Tool result: {tool_data}")
 
                         if tool_data.get("success") and "chart_data" in tool_data:
                             chart_data = tool_data.get("chart_data", [])
@@ -274,9 +302,13 @@ Please verify your file or domain references and try again.
                             domain_name = tool_data.get("domain_name")
                             row_count = tool_data.get("row_count", 0)
 
-                            if tool_data.get("chart_type_requested"):
-                                chart_type = tool_data.get("chart_type", "bar")
-                                logger.info(f"LLM detected chart_type: {tool_data}")
+                            # Respect chart type returned by tool. If it was explicitly requested, mark as requested; otherwise mark as auto.
+                            if "chart_type" in tool_data:
+                                # Do not override an explicitly requested chart type detected earlier
+                                if chart_type_source != "requested":
+                                    chart_type = tool_data.get("chart_type", chart_type or "bar")
+                                    chart_type_source = "requested" if tool_data.get("chart_type_requested") else "auto"
+                                    logger.info(f"Chart type from tool: {chart_type} (source: {chart_type_source})")
 
                             # Extract LLM-detected report type
                             if tool_data.get("report_type_requested"):
@@ -301,34 +333,18 @@ Please verify your file or domain references and try again.
                                 }
                             if args.get('chart_type'):
                                 chart_type = args.get('chart_type')
+                                chart_type_source = "requested"
                             
                             # Extract report_type from tool call arguments
                             if args.get('report_type'):
                                 llm_detected_report_type = args.get('report_type')
                                 logger.info(f"LLM tool call specified report_type: {llm_detected_report_type}")
-
+    
         # Smart decision logic: prioritize clear pre-classification over ambiguous LLM detection
-        final_report_type = None
-        
-        # If pre-classification is confident (success/failure) but LLM says "both", trust pre-classification
-        if report_type in ["success", "failure"] and llm_detected_report_type == "both":
+        final_report_type = llm_detected_report_type
+        if  final_report_type is None:
             final_report_type = report_type
-            logger.info(f"Override: Pre-classification '{report_type}' overrides LLM 'both' for clear cases")
         
-        # If LLM has a specific decision (success/failure), use it
-        elif llm_detected_report_type in ["success", "failure"]:
-            final_report_type = llm_detected_report_type
-            logger.info(f"Using LLM-detected specific report_type: {llm_detected_report_type}")
-        
-        # If LLM says "both" and pre-classification agrees or is uncertain, use "both"
-        elif llm_detected_report_type == "both":
-            final_report_type = "both"
-            logger.info(f"Using LLM-detected 'both' report_type")
-        
-        # Fallback to pre-classification
-        else:
-            final_report_type = report_type if report_type != "uncertain" else "both"
-            logger.info(f"Fallback to pre-classified: {report_type}")
         
         logger.info(f"Final report_type: {final_report_type} (LLM: {llm_detected_report_type}, Pre-classified: {report_type})")
 
@@ -338,11 +354,30 @@ Please verify your file or domain references and try again.
         original_chart_data = chart_data.copy() if DEBUG else None
         filtered_chart_data = AnalyticService.filter_chart_data_by_report_type(chart_data, final_report_type)
 
-        # Generate chart image if we have data
+        # Optionally confirm chart type before generation if it wasn't explicitly requested
         chart_image = None
         chart_generated = False
         if filtered_chart_data:
+            # If the chart type was auto/default (user didn't specify), return a confirmation prompt first
+            if chart_type_source in ("auto", "default"):
+                confirmation_message = (
+                    f"I'll use a '{chart_type or 'bar'}' chart for this analysis. "
+                    "Reply 'yes' to confirm, or specify a chart type (pie, line, donut, stacked)."
+                )
+                return {
+                    "success": False,
+                    "requires_confirmation": True,
+                    "message": confirmation_message,
+                    "proposed_chart_type": chart_type or "bar",
+                    "file_name": file_name,
+                    "domain_name": domain_name,
+                    "row_count": row_count,
+                    "report_type": final_report_type
+                }
+
             try:
+                # Ensure chart_type has a sensible default
+                chart_type = chart_type or "bar"
                 chart_image = chart_generator.generate_chart(
                     chart_data=filtered_chart_data,
                     chart_type=chart_type,
@@ -408,6 +443,18 @@ Please verify your file or domain references and try again.
             # Don't fail the request if filtering fails; just log
             logger.warning(f"Responsible output filtering failed: {_filter_err}")
 
+        # If chart type was auto-selected (user didn't specify), append a concise confirmation note to the message
+        try:
+            if isinstance(interpretation, str) and chart_generated and chart_type_source in ("auto", "default"):
+                interpretation = (
+                    interpretation.rstrip() +
+                    f"\n\nNote: No chart type was provided, so I selected a '{chart_type}' chart automatically. "
+                    "If you prefer a different style (pie, line, donut, stacked), reply with: chart: <type>."
+                )
+        except Exception:
+            # Don't fail if post-processing note injection has issues
+            pass
+
         # Safe logging after filtering
         try:
             if redaction_stats:
@@ -426,7 +473,8 @@ Please verify your file or domain references and try again.
             "file_name": file_name,
             "domain_name": domain_name,
             "row_count": row_count,
-            "report_type": final_report_type
+            "report_type": final_report_type,
+            "chart_type": chart_type
         }
 
         # Optionally include metadata about redactions for observability (no sensitive data included)
