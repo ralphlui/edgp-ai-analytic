@@ -98,6 +98,9 @@ DYNAMODB_CONVERSATIONS_TABLE_NAME = os.getenv("DYNAMODB_CONVERSATIONS_TABLE_NAME
 # Admin API configuration
 ADMIN_API_BASE_URL = os.getenv("ADMIN_URL")
 
+# AWS SQS Audit Logging Configuration
+AUDIT_SQS_QUEUE_URL = os.getenv("AUDIT_SQS_QUEUE_URL")
+
 # JWT configuration
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "RS256")
 
@@ -108,7 +111,7 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 MAX_AGENT_LOOPS = 10
 
 # Application port configuration
-APP_PORT = int(os.getenv("APP_PORT", "8000"))
+APP_PORT = int(os.getenv("APP_PORT", "8091"))
 
 # Responsible AI output filtering configuration
 ENABLE_PII_REDACTION = os.getenv("ENABLE_PII_REDACTION", "true").lower() == "true"
