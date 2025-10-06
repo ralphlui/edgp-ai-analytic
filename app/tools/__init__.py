@@ -3,13 +3,15 @@ Tools package for the analytic system.
 
 This package contains all LangGraph tools and utilities for:
 - Rate analysis and validation reporting
-- Session management and authentication context
-- Shared utilities for tool optimization
+- Session management and authentication context  
+- Domain analytics and data insights
 
 Modules:
 - rate_analysis_tools: Comprehensive success/failure rate calculation tools
-- tool_utils: Shared utilities for performance and consistency
+- domain_analytics_tools: Domain-based analytics and grouping tools
 - session_manager: Session binding and authentication context management
+
+Note: Conversation history uses TTL-based automatic cleanup via DynamoDB.
 """
 
 from .rate_analysis_tools import (
@@ -29,7 +31,6 @@ from .session_manager import (
     unbind_session,
     get_session_context,
     cleanup_expired_sessions,
-    get_active_sessions
 )
 
 __all__ = [
@@ -48,7 +49,6 @@ __all__ = [
     "unbind_session",
     "get_session_context",
     "cleanup_expired_sessions",
-    "get_active_sessions"
 ]
 
 # Tool registry for easy access

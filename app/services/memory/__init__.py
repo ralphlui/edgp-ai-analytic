@@ -1,13 +1,19 @@
 """
-Conversation storage utilities.
+TTL-based conversation storage utilities.
 
-Note: The app uses DynamoDB for conversation history keyed by user_id and
-does not rely on server-side sessions at runtime.
+Note: The app uses DynamoDB for conversation history keyed by user_id with
+automatic TTL-based cleanup. Individual conversations expire automatically
+while user_id records are preserved permanently.
 """
 
-from .dynamo_conversation_service import dynamo_conversation, DynamoConversationService
+# Enhanced TTL-based conversation service (dual-layer automatic cleanup)
+from .dynamo_conversation_ttl_enhanced_service import dynamo_conversation_ttl_enhanced, DynamoConversationTTLEnhancedService
+
+# Export enhanced TTL service as the default
+dynamo_conversation = dynamo_conversation_ttl_enhanced
 
 __all__ = [
-    'dynamo_conversation',
-    'DynamoConversationService'
+    'dynamo_conversation',                      # Enhanced TTL service (dual-layer cleanup)
+    'dynamo_conversation_ttl_enhanced',         # Explicit enhanced TTL service
+    'DynamoConversationTTLEnhancedService',     # Enhanced TTL service class
 ]

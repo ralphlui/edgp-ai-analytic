@@ -124,6 +124,9 @@ SESSION_TTL_HOURS = float(os.getenv("SESSION_TTL_HOURS", "0.25"))
 SESSION_COOKIE_MAX_AGE_HOURS = float(os.getenv("SESSION_COOKIE_MAX_AGE_HOURS", "0.25"))
 MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
 
+# Conversation History Management Configuration (TTL-only)
+CONVERSATION_TTL_DAYS = float(os.getenv("CONVERSATION_TTL_DAYS"))  # Individual conversation TTL
+
 # System prompt components
 SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}
