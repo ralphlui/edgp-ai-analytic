@@ -3,11 +3,7 @@ Clean FastAPI application with separated concerns.
 Main.py only handles routing and basic app setup.
 """
 import logging
-import signal
-import os
-import stat
 import time
-import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 
