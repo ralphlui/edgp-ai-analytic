@@ -148,6 +148,7 @@ class AuditSQSService:
     
     def send_analytics_query_audit(
         self,
+        statusCode: int,
         user_id: str,
         username: str,
         prompt: str,
@@ -181,6 +182,7 @@ class AuditSQSService:
             additional_data["processingTimeMs"] = processing_time_ms
         
         return self.send_audit_log(
+            statusCode=statusCode,
             user_id=user_id,
             username=username,
             activity_type="Analytics-Query",

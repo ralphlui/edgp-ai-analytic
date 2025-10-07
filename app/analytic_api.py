@@ -37,23 +37,6 @@ app = FastAPI(
 # Initialize query coordinator
 coordinator = QueryCoordinator()
 
-@app.get("/api/health/audit-sqs")
-async def audit_sqs_health():
-    """Health check endpoint for SQS audit service."""
-    if not ENABLE_SQS_AUDIT_LOGGING:
-        return {
-            "enabled": False,
-            "message": "SQS audit logging is disabled"
-        }
-    
-    audit_service = get_audit_sqs_service()
-    health_info = audit_service.health_check()
-    
-    return {
-        "enabled": True,
-        "sqs_health": health_info
-    }
-
 @app.post("/api/analytics/query", response_model=Dict[str, Any])
 async def receive_prompt(
     http_request: Request,
@@ -129,6 +112,7 @@ async def receive_prompt(
         processing_time_ms = int((time.time() - start_time) * 1000)
         audit_service = get_audit_sqs_service()
         audit_service.send_analytics_query_audit(
+               statusCode=500,
                 user_id=user_id,
                 username=username or "unknown",
                 prompt=prompt,
