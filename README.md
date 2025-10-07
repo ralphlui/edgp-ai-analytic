@@ -296,6 +296,42 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [ ] **Add data export functionality**
 - [ ] **Implement rate limiting**
 - [ ] **Add monitoring and logging**
+- [x] **Modular prompt system with versioning** ✅
+- [x] **ReAct (Reasoning-Acting-Observing) pattern** ✅
+- [x] **Plan-and-Execute framework for complex queries** ✅
+
+## 🎯 New: Modular Prompt System
+
+The project now includes a sophisticated modular prompt system with support for advanced AI patterns:
+
+### Features
+
+- **📋 Structured Prompts**: Separated from config, organized by purpose
+- **🔄 ReAct Pattern**: Systematic Reasoning → Acting → Observing cycles
+- **📝 Plan-and-Execute**: Multi-step planning for complex analytics queries
+- **🔖 Versioning**: Track and manage prompt versions over time
+- **🛠️ Tool Guidance**: Intelligent tool selection and parameter extraction
+
+### Usage
+
+```python
+# Use system prompts
+from app.prompts import SystemPrompts
+system_prompt = SystemPrompts.get_complete_system_prompt()
+
+# Enable ReAct pattern (add to .env)
+USE_REACT_PROMPTS=true
+
+# Use Plan-and-Execute for complex queries
+from app.prompts import PlanExecutePrompts
+planner = PlanExecutePrompts.get_planner_system_prompt()
+```
+
+### Documentation
+
+- **Full Guide**: See [`app/prompts/README.md`](app/prompts/README.md)
+- **Examples**: Run `python examples/prompts_demo.py`
+- **Configuration**: Check `.env.prompts.example`
 
 ---
 

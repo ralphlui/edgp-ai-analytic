@@ -2,8 +2,12 @@
 Context and conversation handling utilities.
 """
 import re
-from typing import List, Dict, Any
+import os
+from typing import List, Dict, Any, Optional
 from .sanitization import sanitize_text_input, sanitize_filename, sanitize_numeric_value
+
+# Optional: Use ReAct prompts if available
+USE_REACT_PROMPTS = os.getenv("USE_REACT_PROMPTS", "true").lower() == "true"
 
 
 def extract_context_insights(data: List[Dict[str, Any]]) -> List[str]:
@@ -73,6 +77,22 @@ def get_conversation_context(messages: List) -> List:
 def create_interpretation_prompt(user_query: str, tool_results: List[Dict[str, Any]], report_type: str = None, context_insights: List[str] = None) -> str:
     """Create a context-aware interpretation prompt that aligns with the user's specific query intent."""
 
+    # Option 1: Use ReAct-enhanced prompts if enabled
+    if USE_REACT_PROMPTS:
+        try:
+            from app.prompts import ReActPrompts
+            import json
+            
+            react_prompt = ReActPrompts.get_react_interpretation_prompt()
+            return react_prompt.format(
+                user_query=sanitize_text_input(user_query, 200),
+                tool_results=json.dumps(tool_results, indent=2),
+                context_insights="\n".join(context_insights) if context_insights else "No additional insights"
+            )
+        except ImportError:
+            pass  # Fall back to legacy prompts
+    
+    # Option 2: Legacy prompt format (default)
     # Build the interpretation prompt
     prompt_parts = []
     

@@ -87,6 +87,7 @@ class AnalyticService:
     def _create_enhanced_system_message(current_date: str, conversation_insights: str) -> str:
         """Create comprehensive system message with reference resolution instructions."""
         from app.config import SYSTEM
+        from app.prompts.system_prompts import SystemPrompts
         
         base_system = SYSTEM.format(current_date=current_date)
         
@@ -97,7 +98,7 @@ CONVERSATION CONTEXT:
 
 CRITICAL: PRIORITIZE CURRENT USER PROMPT
 - ALWAYS analyze and respond to the CURRENT user prompt first and foremost
-- If current prompt is NOT analytics-related (e.g., general conversation, coding questions, weather, news, etc.), respond with: "I appreciate you reaching out! I'm specifically designed to help with data analytics tasks like generating reports, analyzing trends, and visualizing data.\n\nI'm not able to help with that particular request, but I'd be happy to assist with any data-related questions you have! Is there anything analytics-related I can help you with today?"
+- If current prompt is NOT analytics-related (e.g., general conversation, coding questions, weather, news, etc.), respond with: {SystemPrompts.get_non_analytics_fallback().format()}
 - For analytics queries: Conversation history is provided for context ONLY - do not let it override current request
 - If current prompt is different from previous requests, follow the current prompt completely
 - Only use conversation history to fill in gaps when current prompt is incomplete AND analytics-related

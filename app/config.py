@@ -1,24 +1,17 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 def load_environment_config():
     """
     Load environment-specific configuration based on ENV variable.
     
-    EnvironmeTOOL USAGE GUIDELINES:
-├── ALWAYS specify chart_type parameter (default: "bar")
-├── ALWAYS specify report_type parameter - THIS IS REQUIRED, NO DEFAULT:
-   • If user asks for "success rate" → report_type="success" (even with pie charts)
-   • If user asks for "failure rate" → report_type="failure"  
-   • If user asks for "both" or "analyze" → report_type="both"
-   • You MUST explicitly set this parameter in every tool call
-├── ONLY include start_date and end_date when dates are explicitly mentioned in the user query
-├── If no dates are mentioned, do NOT include start_date or end_date parameters
-├── Extract file names and clean extra quotes/spaces
-├── For domain queries: Extract domain name WITHOUT adding "_domain" suffix
-├── Filter data by created_date column
-├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
-└── Use org_id for multi-tenant isolation"""
+    Environments:
+    - production: Uses .env.production
+    - sit: Uses .env.sit
+    - test: Uses .env.test
+    - development: Uses .env (default)
+    """
     env = os.getenv('APP_ENV', 'development').lower()
     
     # Environment file mapping
@@ -130,8 +123,40 @@ MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
 # Conversation History Management Configuration (TTL-only)
 CONVERSATION_TTL_DAYS = float(os.getenv("CONVERSATION_TTL_DAYS"))  # Individual conversation TTL
 
-# System prompt components
-SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
+# ==============================================================================
+# SYSTEM PROMPTS - Migrated to prompts module
+# ==============================================================================
+# NOTE: Legacy prompt components below are kept for backward compatibility
+# New code should use: from app.prompts import SystemPrompts
+#
+# To use the new modular prompts:
+#   from app.prompts import SystemPrompts
+#   system_prompt = SystemPrompts.get_complete_system_prompt()
+#
+# For ReAct pattern:
+#   from app.prompts import ReActPrompts
+#   react_prompt = ReActPrompts.get_react_system_prompt()
+#
+# For Plan-and-Execute pattern:
+#   from app.prompts import PlanExecutePrompts
+#   planner_prompt = PlanExecutePrompts.get_planner_system_prompt()
+# ==============================================================================
+
+# Legacy system prompt (for backward compatibility)
+# Import the new prompts module
+try:
+    from app.prompts import SystemPrompts
+    # Generate the complete system prompt using the new modular approach
+    SYSTEM = SystemPrompts.get_complete_system_prompt(
+        current_date=datetime.now().strftime("%Y-%m-%d")
+    )
+    print("✅ Using new modular prompt system from app.prompts")
+except ImportError as e:
+    print(f"⚠️  Could not import new prompts module: {e}")
+    print("⚠️  Falling back to legacy prompts")
+    
+    # Fallback to legacy prompts if import fails
+    SYSTEM_CORE = """You are the Analytics Agent for data quality and data accuracy.
 Today's date: {current_date}
 
 SPECIALIZATION: I am an analytics agent that helps with data analysis, reporting, and visualization. 
@@ -155,7 +180,7 @@ CORE CAPABILITIES:
 - Analyze customer data from tracker table where domain = 'customer'
 - Generate customer reports by country and summary statistics"""
 
-REPORT_TYPE_INSTRUCTIONS = """
+    REPORT_TYPE_INSTRUCTIONS = """
 REPORT TYPE DETECTION:
 ├── SUCCESS-ONLY: "success rate", "successful", "pass rate", "only success"
 ├── FAILURE-ONLY: "fail rate", "failure rate", "error rate", "only failures"
@@ -174,7 +199,7 @@ EXAMPLES:
 - "Analyze the data" → report_type="both"
 - "Get overall performance" → report_type="both\""""
 
-CHART_TYPE_INSTRUCTIONS = """
+    CHART_TYPE_INSTRUCTIONS = """
 CHART TYPE MAPPING:
 ├── PIE: "pie chart", "pie graph", "circular", "proportion"
 ├── DONUT: "donut", "doughnut", "ring", "modern pie"
@@ -182,7 +207,7 @@ CHART TYPE MAPPING:
 ├── STACKED: "stacked", "horizontal bar", "composition", "breakdown"
 └── BAR: "bar chart", "column", "bars" (DEFAULT)"""
 
-DATE_HANDLING_INSTRUCTIONS = """
+    DATE_HANDLING_INSTRUCTIONS = """
 DATE EXTRACTION RULES:
 ├── "from DATE" → start_date=DATE, end_date=today
 ├── "since DATE" → start_date=DATE, end_date=today
@@ -191,7 +216,7 @@ DATE EXTRACTION RULES:
 ├── "last N days" → start_date=N_days_ago, end_date=today
 └── If no dates mentioned → do NOT include start_date or end_date parameters"""
 
-TOOL_USAGE_GUIDELINES = """
+    TOOL_USAGE_GUIDELINES = """
 TOOL CALL REQUIREMENTS:
 ├── ALWAYS specify chart_type parameter (default: "bar")
 ├── ALWAYS specify report_type parameter - THIS IS REQUIRED, NO DEFAULT:
@@ -207,7 +232,7 @@ TOOL CALL REQUIREMENTS:
 ├── When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
 └── Use org_id for multi-tenant isolation"""
 
-DOMAIN_EXTRACTION_INSTRUCTIONS = """
+    DOMAIN_EXTRACTION_INSTRUCTIONS = """
 DOMAIN NAME EXTRACTION:
 ├── "customer domain" → domain_name="customer"
 ├── "product domain" → domain_name="product"
@@ -218,7 +243,7 @@ DOMAIN NAME EXTRACTION:
 ├── If domain_name ends with "_domain", the system will automatically clean it
 └── Examples: "customer_domain" becomes "customer", "product_domain" becomes "product\""""
 
-DOMAIN_ANALYTICS_INSTRUCTIONS = """
+    DOMAIN_ANALYTICS_INSTRUCTIONS = """
 FLEXIBLE DOMAIN ANALYTICS QUERIES:
 ├── For natural language queries with domain + grouping: Use analyze_query_for_domain_analytics_tool
 ├── Examples:
@@ -234,7 +259,7 @@ FLEXIBLE DOMAIN ANALYTICS QUERIES:
 │   └── domain_name="order", group_by_field="region" → Order distribution by region
 └── These tools work with any domain in tracker table filtered by org_id"""
 
-SYSTEM = f"""{SYSTEM_CORE}
+    SYSTEM = f"""{SYSTEM_CORE}
 
 {REPORT_TYPE_INSTRUCTIONS}
 
@@ -260,3 +285,4 @@ RESPONSE PRINCIPLES:
 - If no dates are specified, analyze all available data without date restrictions
 - For customer analytics, use the appropriate customer analytics tools
 - When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages"""
+
