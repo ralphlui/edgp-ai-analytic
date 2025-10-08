@@ -123,27 +123,6 @@ MAX_SESSION_HISTORY = int(os.getenv("MAX_SESSION_HISTORY", "20"))
 # Conversation History Management Configuration (TTL-only)
 CONVERSATION_TTL_DAYS = float(os.getenv("CONVERSATION_TTL_DAYS"))  # Individual conversation TTL
 
-# ==============================================================================
-# SYSTEM PROMPTS - Migrated to prompts module
-# ==============================================================================
-# NOTE: Legacy prompt components below are kept for backward compatibility
-# New code should use: from app.prompts import SystemPrompts
-#
-# To use the new modular prompts:
-#   from app.prompts import SystemPrompts
-#   system_prompt = SystemPrompts.get_complete_system_prompt()
-#
-# For ReAct pattern:
-#   from app.prompts import ReActPrompts
-#   react_prompt = ReActPrompts.get_react_system_prompt()
-#
-# For Plan-and-Execute pattern:
-#   from app.prompts import PlanExecutePrompts
-#   planner_prompt = PlanExecutePrompts.get_planner_system_prompt()
-# ==============================================================================
-
-# Legacy system prompt (for backward compatibility)
-# Import the new prompts module
 try:
     from app.prompts import SystemPrompts
     # Generate the complete system prompt using the new modular approach
