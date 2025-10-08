@@ -181,7 +181,7 @@ IMPORTANT GUIDELINES FOR TOOL USE:
         """
         try:
             # Import here to avoid circular imports
-            from .graph_builder import build_app
+            from .graph_builder import build_analytics_graph
             from app.generators.chart_generator import chart_generator
             from app.utils.sanitization import sanitize_text_input
             from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -191,7 +191,9 @@ IMPORTANT GUIDELINES FOR TOOL USE:
             logger.info(f"Report type: '{report_type}'")
             logger.info(f"conversation_history type: '{conversation_history}'")
 
-            app_graph = build_app()
+            # Build Graph V2 (typed state + compression + PII protection)
+            app_graph = build_analytics_graph()
+            logger.info("Using Graph Builder V2 (typed state + compression)")
 
         except Exception as e:
             return {"success": False, "message": str(e), "chart_image": None}
@@ -233,12 +235,19 @@ IMPORTANT GUIDELINES FOR TOOL USE:
         safe_prompt = sanitize_text_input(prompt, 300)
         messages.append(HumanMessage(content=safe_prompt))
 
-        # Prepare state with enhanced context
+        # Prepare state with V2 typed state structure
         # Note: Don't pass pre-classified report_type to LLM - let LLM decide based on prompt
+        # Note: user_id is NOT included in state - multi-tenant isolation uses contextvars
+        # (see app.utils.request_context.USER_ID_CTX set at API layer)
         state = {
             "messages": messages,
-            "user_id": user_id,
+            "loop_count": 0,
+            "tool_results": [],
+            "context_insights": [],
+            "compression_applied": False,
+            "total_tokens_estimate": 0
         }
+        logger.info("Using V2 typed state structure")
 
         loop = asyncio.get_running_loop()
         try:

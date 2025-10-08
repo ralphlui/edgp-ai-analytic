@@ -170,13 +170,13 @@ class TestAnalyticServiceReportTypeDecision:
     @pytest.mark.asyncio
     async def test_report_type_decision_llm_specific_wins(self):
         """Test that LLM specific decision (success/failure) is used."""
-        with patch('app.core.graph_builder.build_app') as mock_build_app, \
-             patch('app.utils.report_type.get_report_type') as mock_get_report_type:
-            
+        with patch('app.core.graph_builder.build_analytics_graph') as mock_build_graph, \
+                patch('app.utils.report_type.get_report_type') as mock_get_report_type:
+
             # Mock graph execution with LLM making specific decision
             mock_app = MagicMock()
-            mock_build_app.return_value = mock_app
-            
+            mock_build_graph.return_value = mock_app
+
             mock_app.invoke.return_value = {
                 "messages": [
                     MagicMock(
@@ -189,15 +189,15 @@ class TestAnalyticServiceReportTypeDecision:
                     )
                 ]
             }
-            
+
             # Pre-classification might be uncertain
             async def async_get_report_type(prompt):
                 return "uncertain"
-            
+
             mock_get_report_type.return_value = async_get_report_type("check the data")
-            
+
             result = await AnalyticService.process_query("check the data")
-            
+
             # Should use LLM specific decision "failure"
             assert result["success"] is True
             if "DEBUG" in result:  # Only check if debug data is available

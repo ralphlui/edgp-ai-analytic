@@ -181,7 +181,9 @@ edgp-ai-analytic/
 ├── app/
 │   ├── core/                 # Core business logic
 │   │   ├── analytic_service.py    # Main analytics engine
-│   │   └── graph_builder.py       # LangGraph workflow builder
+│   │   ├── graph_builder.py    # LangGraph workflow (typed state + compression)
+│   │   ├── agent_state.py         # TypedDict state definition
+│   │   └── message_compression.py # PII protection + token budgets
 │   ├── services/             # External service integrations
 │   │   ├── database_service.py    # DynamoDB operations
 │   │   └── query_coordinator.py   # Request orchestration
@@ -214,10 +216,12 @@ edgp-ai-analytic/
 - Multi-step workflow coordination
 
 ### **Graph Builder** (`graph_builder.py`)  
-- LangGraph workflow construction
+- 3-node architecture (assistant, tools, interpretation)
+- TypedDict state with 7 fields for type safety
+- PII protection (6 pattern types: email, phone, SSN, card, API keys, JWT)
+- Token compression (67% reduction: 12k → 4k tokens)
+- Smart routing with conditional edges
 - AI agent loop protection (max 10 cycles)
-- State management and message tracking
-- Tool integration and error handling
 
 ### **Chart Generator** (`chart_generator.py`)
 - Dynamic visualization creation
