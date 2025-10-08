@@ -65,6 +65,7 @@ class TestAuditSQSService:
         service = AuditSQSService(queue_url="https://sqs.us-east-1.amazonaws.com/123456789/test-queue")
         
         result = service.send_audit_log(
+            statusCode=200,
             user_id="user123",
             username="testuser",
             activity_type="Analytics-Query",
@@ -80,6 +81,7 @@ class TestAuditSQSService:
         call_args = mock_client.send_message.call_args
         message_body = json.loads(call_args[1]['MessageBody'])
         
+        assert message_body['statusCode'] == 200
         assert message_body['userId'] == "user123"
         assert message_body['username'] == "testuser"
         assert message_body['activityType'] == "Analytics-Query"
@@ -99,7 +101,7 @@ class TestAuditSQSService:
         
         service = AuditSQSService(queue_url="https://sqs.us-east-1.amazonaws.com/123456789/test-queue")
         
-        result = service.send_audit_log("user123", "testuser")
+        result = service.send_audit_log(statusCode=200, user_id="user123", username="testuser")
         assert result is False
     
     @patch('app.services.audit_sqs_service.boto3.client')
@@ -112,6 +114,7 @@ class TestAuditSQSService:
         service = AuditSQSService(queue_url="https://sqs.us-east-1.amazonaws.com/123456789/test-queue")
         
         result = service.send_analytics_query_audit(
+            statusCode=200,
             user_id="user456",
             username="analyst",
             prompt="show me success rate for customer.csv",
@@ -125,6 +128,7 @@ class TestAuditSQSService:
         call_args = mock_client.send_message.call_args
         message_body = json.loads(call_args[1]['MessageBody'])
         
+        assert message_body['statusCode'] == 200
         assert message_body['userId'] == "user456"
         assert message_body['username'] == "analyst"
         assert message_body['activityType'] == "Analytics-Query"
@@ -142,6 +146,7 @@ class TestAuditSQSService:
         service = AuditSQSService(queue_url="https://sqs.us-east-1.amazonaws.com/123456789/test-queue")
         
         result = service.send_analytics_query_audit(
+            statusCode=400,
             user_id="user789",
             username="analyst2",
             prompt="invalid query with malicious content",
@@ -156,6 +161,7 @@ class TestAuditSQSService:
         call_args = mock_client.send_message.call_args
         message_body = json.loads(call_args[1]['MessageBody'])
         
+        assert message_body['statusCode'] == 400
         assert message_body['responseStatus'] == "FAILURE"
         assert "Request blocked for security reasons" in message_body['remarks']
         assert "Error: Request blocked for security reasons" in message_body['activityDescription']
@@ -167,6 +173,7 @@ class TestAuditSQSService:
             
             long_prompt = "a" * 200  # 200 character prompt
             service.send_analytics_query_audit(
+                statusCode=200,
                 user_id="user123",
                 username="test",
                 prompt=long_prompt,
@@ -197,13 +204,21 @@ class TestAuditSQSService:
         assert 'queue_arn' in health_info
         assert health_info['queue_url'] == "https://sqs.us-east-1.amazonaws.com/123456789/test-queue"
     
-    def test_health_check_no_queue_url(self):
+    @patch.dict('os.environ', {'AUDIT_SQS_QUEUE_URL': ''}, clear=False)
+    @patch('app.services.audit_sqs_service.boto3.client')
+    def test_health_check_no_queue_url(self, mock_boto_client):
         """Test health check when no queue URL is configured."""
+        mock_client = Mock()
+        mock_boto_client.return_value = mock_client
+        
         service = AuditSQSService(queue_url=None)
         health_info = service.health_check()
         
+        # When queue_url is None, health check should return False without calling AWS
         assert health_info['healthy'] is False
         assert "Queue URL not configured" in health_info['error']
+        # Verify that get_queue_attributes was NOT called since queue_url is None
+        mock_client.get_queue_attributes.assert_not_called()
     
     @patch('app.services.audit_sqs_service.boto3.client')
     def test_health_check_sqs_error(self, mock_boto_client):
@@ -253,6 +268,7 @@ class TestAuditLogMessageFormat:
         service = AuditSQSService(queue_url="https://test.queue")
         
         service.send_audit_log(
+            statusCode=200,
             user_id="afcf8527-ce7e-453f-86bf-3aa232fca2c4",
             username="Khin",
             activity_type="Admin-Authentication-LoginUser",

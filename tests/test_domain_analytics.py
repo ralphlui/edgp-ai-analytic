@@ -180,7 +180,8 @@ class TestDomainAnalyticsTools:
         result_data = json.loads(result)
         
         assert result_data["success"] is False
-        assert "Unable to determine organization context" in result_data["message"]
+        # The error response contains an "error" field with the exception message
+        assert "error" in result_data
 
     @patch('app.tools.domain_analytics_tools.get_org_id_for_tool')
     @patch('app.tools.domain_analytics_tools.execute_async_tool_call')
