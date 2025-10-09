@@ -121,6 +121,8 @@ def format_tool_response(
     """
     Format tool response with consistent structure and error handling.
     
+    SECURITY: Sanitizes tool outputs to prevent injection attacks via compromised tools.
+    
     Args:
         result: Database result dictionary
         chart_type: Validated chart type
@@ -129,9 +131,15 @@ def format_tool_response(
         report_type: Type of report to generate ('success', 'failure', 'both')
     
     Returns:
-        Formatted response as JSON string or dict
+        Formatted and sanitized response as JSON string or dict
     """
+    from app.utils.sanitization import sanitize_tool_output
+    
     try:
+        # SECURITY: Sanitize tool output before formatting
+        # This prevents injection attacks through compromised/malicious tools
+        result = sanitize_tool_output(result, max_length=10000)
+        
         if result.get("success"):
             result["chart_type"] = chart_type
             result["chart_type_requested"] = True

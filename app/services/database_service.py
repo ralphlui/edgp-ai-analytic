@@ -33,7 +33,7 @@ class DatabaseService:
                     "chart_data": [],
                     "row_count": 0,
                     "file_name": file_name,
-                    "org_id": org_id
+                    #"org_id": org_id
                 }
 
             # Build filter expression
@@ -100,9 +100,9 @@ class DatabaseService:
                     "chart_data": [],
                     "row_count": 0,
                     "message": " ".join(message_parts) + ".",
-                    "file_id": file_id,
+                    #"file_id": file_id,
                     "file_name": file_name,
-                    "org_id": org_id,
+                    #"org_id": org_id,
                     "date_filter": {
                         "start_date": start_date,
                         "end_date": end_date
@@ -151,9 +151,9 @@ class DatabaseService:
                 "chart_data": chart_data,
                 "row_count": total,
                 "chart_type": "bar",
-                "file_id": file_id,
+                #"file_id": file_id,
                 "file_name": file_name,
-                "org_id": org_id
+                #"org_id": org_id
             }
         except Exception as e:
             self.logger.exception("Error in get_success_rate_by_file_name for file_name: %s", file_name)
@@ -162,9 +162,9 @@ class DatabaseService:
                 "error": str(e),
                 "chart_data": [],
                 "row_count": 0,
-                "file_id": file_id,
+                #"file_id": file_id,
                 "file_name": file_name,
-                "org_id": org_id
+                #"org_id": org_id
             }
         
 
@@ -186,7 +186,7 @@ class DatabaseService:
                     "chart_data": [],
                     "row_count": 0,
                     "domain_name": domain_name,
-                    "org_id": org_id
+                    #"org_id": org_id
                 }
 
             # Build filter expression
@@ -254,7 +254,7 @@ class DatabaseService:
                     "row_count": 0,
                     "message": " ".join(message_parts) + ".",
                     "domain_name": domain_name,
-                    "org_id": org_id,
+                    #"org_id": org_id,
                     "date_filter": {
                         "start_date": start_date,
                         "end_date": end_date
@@ -304,7 +304,7 @@ class DatabaseService:
                 "row_count": total,
                 "chart_type": "bar",
                 "domain_name": domain_name,
-                "org_id": org_id
+                #"org_id": org_id
             }
         except Exception as e:
             self.logger.exception("Error in get_success_rate_by_domain_name for domain_name: %s", domain_name)
@@ -314,7 +314,7 @@ class DatabaseService:
                 "chart_data": [],
                 "row_count": 0,
                 "domain_name": domain_name,
-                "org_id": org_id
+                #"org_id": org_id
             }
 
 
@@ -545,9 +545,9 @@ class DatabaseService:
                 "records_with_status": total_with_status,
                 "chart_data": chart_data,
                 "chart_type": "bar",
-                "file_id": file_id,
+                #"file_id": file_id,
                 "file_name": file_name,
-                "org_id": org_id,
+                #"org_id": org_id,
                 "status_field": status_field,
                 "can_generate_report": True,
                 "report_summary": {
@@ -565,7 +565,7 @@ class DatabaseService:
                 "failure_rate": 0,
                 "chart_data": [],
                 "total_records": 0,
-                "file_id": file_id,
+                #"file_id": file_id,
                 "file_name": file_name,
                 "status_field": status_field
             }
@@ -632,7 +632,7 @@ class DatabaseService:
                     "domain_name": domain_name,
                     "group_by_field": group_by_field,
                     "message": " ".join(message_parts) + ".",
-                    "org_id": org_id,
+                    #"org_id": org_id,
                     "date_filter": {
                         "start_date": start_date,
                         "end_date": end_date
@@ -693,7 +693,7 @@ class DatabaseService:
                 "domain_name": domain_name,
                 "group_by_field": group_by_field,
                 "chart_type": "bar",
-                "org_id": org_id,
+                #"org_id": org_id,
                 "date_filter": {
                     "start_date": start_date,
                     "end_date": end_date
@@ -713,7 +713,7 @@ class DatabaseService:
                 "total_records": 0,
                 "domain_name": domain_name,
                 "group_by_field": group_by_field,
-                "org_id": org_id
+               # "org_id": org_id
             }
 
     def __init__(self):

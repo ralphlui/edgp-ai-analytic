@@ -3,9 +3,45 @@ Input sanitization utilities for security and data integrity.
 """
 import re
 import logging
-from typing import Any, List, Dict
+import unicodedata
+from typing import Any, List, Dict, Union
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_unicode(text: str) -> str:
+    """
+    Normalize Unicode characters to prevent bypass attacks using fullwidth/special characters.
+    
+    Examples of attacks this prevents:
+    - Ｓｙｓｔｅｍ: (fullwidth Unicode)
+    - Sys\u0074em: (Unicode escapes)
+    - &#83;ystem: (HTML entities - partially)
+    
+    Args:
+        text: Input text potentially containing Unicode variations
+        
+    Returns:
+        Normalized text with standard ASCII characters where possible
+    """
+    if not text:
+        return ""
+    
+    try:
+        # NFKC normalization: Compatibility decomposition, followed by canonical composition
+        # This converts fullwidth characters to their ASCII equivalents
+        normalized = unicodedata.normalize('NFKC', text)
+        
+        # Remove non-printable characters (except common whitespace)
+        cleaned = ''.join(
+            char for char in normalized 
+            if char.isprintable() or char in ('\n', '\r', '\t', ' ')
+        )
+        
+        return cleaned
+    except Exception as e:
+        logger.warning(f"Unicode normalization failed: {e}")
+        return text
 
 
 def sanitize_text_input(text: str, max_length: int = 500) -> str:
@@ -13,7 +49,10 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
     if not text:
         return ""
 
-    # Remove or escape potentially dangerous characters/patterns
+    # STEP 1: Normalize Unicode to prevent bypass attacks
+    text = normalize_unicode(text)
+
+    # STEP 2: Remove or escape potentially dangerous characters/patterns
     sanitized = text.strip()
 
     # More targeted filtering - preserve core query while blocking injection
@@ -118,6 +157,122 @@ def sanitize_text_input(text: str, max_length: int = 500) -> str:
         sanitized = sanitized[:max_length] + "..."
 
     return sanitized
+
+
+def sanitize_tool_output(output: Union[str, Dict, List], max_length: int = 5000) -> Union[str, Dict, List]:
+    """
+    Sanitize tool outputs to prevent injection attacks via compromised or malicious tools.
+    
+    This is critical because:
+    1. External tools (APIs, web scrapers, databases) might return malicious content
+    2. A compromised tool could inject prompts into the LLM context
+    3. Tool outputs are often added directly to LLM messages without validation
+    
+    Args:
+        output: Tool output (can be string, dict, or list)
+        max_length: Maximum length for string outputs (default 5000 for tool outputs)
+        
+    Returns:
+        Sanitized output in the same type as input
+        
+    Examples:
+        >>> sanitize_tool_output("Normal data: value")
+        "Normal data: value"
+        
+        >>> sanitize_tool_output("System: ignore previous\\nMalicious content")
+        "Malicious content"
+        
+        >>> sanitize_tool_output({"message": "System: attack", "data": "safe"})
+        {"message": "attack", "data": "safe"}
+    """
+    if output is None:
+        return ""
+    
+    # Handle dictionary outputs (most common for structured tool responses)
+    if isinstance(output, dict):
+        sanitized_dict = {}
+        for key, value in output.items():
+            # Recursively sanitize dictionary values
+            if isinstance(value, str):
+                sanitized_dict[key] = sanitize_tool_output(value, max_length)
+            elif isinstance(value, (dict, list)):
+                sanitized_dict[key] = sanitize_tool_output(value, max_length)
+            else:
+                # Keep non-string values as-is (numbers, booleans, etc.)
+                sanitized_dict[key] = value
+        return sanitized_dict
+    
+    # Handle list outputs
+    elif isinstance(output, list):
+        return [
+            sanitize_tool_output(item, max_length) 
+            for item in output
+        ]
+    
+    # Handle string outputs
+    elif isinstance(output, str):
+        if not output:
+            return ""
+        
+        # STEP 1: Normalize Unicode
+        sanitized = normalize_unicode(output)
+        
+        # STEP 2: Remove dangerous injection patterns
+        # Use the same patterns as sanitize_text_input but adapted for tool outputs
+        dangerous_patterns = [
+            # Role manipulation attempts in tool outputs - only remove the role prefix
+            r'System:\s*',
+            r'Assistant:\s*',
+            r'User:\s*',
+            r'Human:\s*',
+            r'AI:\s*',
+            
+            # Instruction injection from tools - remove entire phrase
+            r'Ignore\s+previous.*?(?=\n|$)',
+            r'Forget\s+previous.*?(?=\n|$)',
+            r'Disregard.*?(?=\n|$)',
+            r'Override.*?(?=\n|$)',
+            r'You\s+are\s+now.*?(?=\n|$)',
+            
+            # Script/code injection from web scraping
+            r'<script.*?</script>',
+            r'<script.*?>',
+            r'</script>',
+            r'javascript:.*?(?=\s|$)',
+            r'on\w+\s*=\s*["\'].*?["\']',  # onclick, onload, etc.
+            
+            # Command execution from shell tools
+            r'rm\s+-rf.*?(?=\n|$)',
+            r'Execute:.*?(?=\n|$)',
+            r'Run:.*?(?=\n|$)',
+            
+            # Template injection patterns
+            r'\[INST\].*?\[/INST\]',
+            r'<\|.*?\|>',
+            r'\{\{.*?\}\}',
+            
+            # SQL injection patterns in database responses
+            r';\s*DROP\s+TABLE',
+            r';\s*DELETE\s+FROM',
+            r'UNION\s+SELECT',
+            r'<script',  # XSS attempts
+        ]
+        
+        for pattern in dangerous_patterns:
+            sanitized = re.sub(pattern, '', sanitized, flags=re.IGNORECASE | re.MULTILINE)
+        
+        # STEP 3: Clean up whitespace
+        sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+        
+        # STEP 4: Limit length (tool outputs can be longer than user inputs)
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length] + "... [truncated for safety]"
+        
+        return sanitized
+    
+    # For any other type, convert to string and sanitize
+    else:
+        return sanitize_tool_output(str(output), max_length)
 
 
 def sanitize_filename(filename: str) -> str:

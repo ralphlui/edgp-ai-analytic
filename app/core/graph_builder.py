@@ -224,8 +224,11 @@ def interpretation_node(state: AnalyticsAgentState) -> AnalyticsAgentState:
 def tools_node_wrapper(state: AnalyticsAgentState) -> AnalyticsAgentState:
     """
     Tools node wrapper: executes tools and extracts results/insights.
+    
+    SECURITY: Sanitizes all tool outputs to prevent injection attacks.
     """
     from app.core.analytic_service import AnalyticService
+    from app.utils.sanitization import sanitize_tool_output
     
     # Execute tools using LangGraph's ToolNode
     tool_node = ToolNode(AnalyticService.TOOLS)
@@ -240,6 +243,11 @@ def tools_node_wrapper(state: AnalyticsAgentState) -> AnalyticsAgentState:
         if isinstance(msg, ToolMessage):
             try:
                 tool_data = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
+                
+                # SECURITY: Sanitize tool output before adding to state
+                # This prevents injection through compromised tools
+                tool_data = sanitize_tool_output(tool_data, max_length=10000)
+                
                 tool_results.append(tool_data)
                 
                 # Extract insights if data present
