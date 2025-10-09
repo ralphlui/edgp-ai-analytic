@@ -90,15 +90,27 @@ class AnalyticService:
         from app.prompts.system_prompts import SystemPrompts
         
         base_system = SYSTEM.format(current_date=current_date)
+        # logger.info(f"Base system prompt: {base_system}...")
         
         enhanced_instructions = f"""
+
+🔒 STRICT SCOPE ENFORCEMENT:
+- I am EXCLUSIVELY an analytics assistant for data analysis, reporting, and visualization
+- If the user's query is NOT about data analytics (e.g., "What's the weather?", "Write me a story", "Help me code a function", "What is 2+2?"), I MUST respond with:
+  
+  "{SystemPrompts.get_non_analytics_fallback().format()}"
+
+- ONLY process queries related to: data analysis, success/failure rates, charts, visualizations, file analytics, domain analytics, customer reports
+- Do NOT attempt to answer general knowledge, coding, creative, or any non-analytics questions
 
 CONVERSATION CONTEXT:
 {conversation_insights}
 
 CRITICAL: PRIORITIZE CURRENT USER PROMPT
 - ALWAYS analyze and respond to the CURRENT user prompt first and foremost
-- If current prompt is NOT analytics-related (e.g., general conversation, coding questions, weather, news, etc.), respond with: {SystemPrompts.get_non_analytics_fallback().format()}
+- FIRST, determine if the current prompt is analytics-related or not
+- If NOT analytics-related → Use the non-analytics fallback message and STOP
+- If analytics-related → Continue with normal processing below
 - For analytics queries: Conversation history is provided for context ONLY - do not let it override current request
 - If current prompt is different from previous requests, follow the current prompt completely
 - Only use conversation history to fill in gaps when current prompt is incomplete AND analytics-related
@@ -109,6 +121,32 @@ IMPORTANT GUIDELINES FOR TOOL USE:
   2. DOMAIN DISTRIBUTION ANALYSIS: Shows "how many [domain] by [column]" - only needs domain_name (no report_type needed)
 
 - SMART CLARIFICATION RULES (based on CURRENT prompt):
+  * If user asks for "report" without details → Ask which type of report and provide options:
+    "I can generate several types of reports for you:
+    
+    📊 **Available Reports:**
+    1. **Success/Failure Rate Report** - Analysis of success vs failure rates
+       - For files: Specify file name (e.g., 'customer.csv')
+       - For domains: Specify domain name (e.g., 'customer domain')
+    
+    2. **Domain Distribution Report** - Show data distribution by categories
+       - Example: 'How many customers by country'
+       - Example: 'Product distribution by category'
+    
+    3. **Data Quality Report** - Data quality validation metrics
+    
+    📈 **Available Chart Types:**
+    - Bar Chart (default)
+    - Pie Chart
+    - Donut Chart
+    - Line Chart
+    - Stacked Chart
+    
+    What type of report would you like to generate? Please specify:
+    - What data source (file name or domain)?
+    - What type of analysis?
+    - Preferred chart type (optional)?"
+  
   * If current prompt has NO success/fail keywords AND NO file/domain names → Ask user to specify what they want to analyze
   * If current prompt says only "success" or "failure" → Ask which file or domain they want analyzed
   * If current prompt says only "customer.csv" or "customer domain" → Ask if they want success/failure rates OR domain distribution
@@ -124,14 +162,21 @@ IMPORTANT GUIDELINES FOR TOOL USE:
   * Keywords "how many", "by country", "by category", "distribution" → Use domain distribution tools
 
 - EXAMPLES:
-  * "show me data" → ASK FOR CLARIFICATION (no file/domain, no analysis type)
-  * "generate report" → ASK FOR CLARIFICATION (no file/domain, no analysis type)  
+  * "What's the weather? or greeting messages such as hi, hello" → Use non-analytics fallback (NOT analytics-related)
+  * "Write me a Python function" → Use non-analytics fallback (NOT analytics-related)
+  * "Tell me a joke" → Use non-analytics fallback (NOT analytics-related)
+  * "generate report" → ASK FOR REPORT TYPE with available options (analytics-related but incomplete)
+  * "create a report" → ASK FOR REPORT TYPE with available options (analytics-related but incomplete)
+  * "show me report" → ASK FOR REPORT TYPE with available options (analytics-related but incomplete)
+  * "I need a report" → ASK FOR REPORT TYPE with available options (analytics-related but incomplete)
+  * "show me data" → ASK FOR CLARIFICATION (analytics-related but vague)
   * "customer.csv" → ASK what type of analysis (file provided, but analysis type unclear)
   * "success rate" → ASK which file/domain (analysis type provided, but target unclear)
   * "success rate for that file" → ASK which specific file (vague reference)
   * "analyze the previous domain" → ASK which specific domain (vague reference)
   * "show me this data" → ASK which specific file/domain (vague reference)
   * "success rate for customer.csv" → PROCEED with file success/failure analysis
+  * "generate success rate report for customer.csv as pie chart" → PROCEED with complete parameters
   * "how many customers by country" → PROCEED with domain distribution analysis
 
 - For chart_type: Choose automatically based on data type, or use user-specified type.

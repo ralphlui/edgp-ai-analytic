@@ -188,10 +188,51 @@ RESPONSE PRINCIPLES:
 - Only apply date filters when explicitly mentioned in the user query
 - If no dates are specified, analyze all available data without date restrictions
 - For customer analytics, use the appropriate customer analytics tools
-- When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages""",
+- When tools return no data, provide helpful context and suggestions instead of generic "no data found" messages
+
+CLARIFICATION FOR VAGUE REQUESTS:
+- When user asks for "report" or "generate report" without details, provide available options:
+  * List available report types (Success/Failure Rate, Domain Distribution, Data Quality)
+  * List available chart types (Bar, Pie, Donut, Line, Stacked)
+  * Ask for: data source, analysis type, and preferred chart type
+- When user provides partial information, ask only for missing pieces
+- Always be helpful and guide users toward complete, specific requests""",
             version=PromptVersion.V2_0,
             description="Response generation principles and guidelines",
             tags=["system", "response", "principles"]
+        )
+    
+    @staticmethod
+    def get_report_options_template() -> PromptTemplate:
+        """Get the template for showing available report options."""
+        return PromptTemplate(
+            content="""I can generate several types of reports for you:
+
+📊 **Available Reports:**
+1. **Success/Failure Rate Report** - Analysis of success vs failure rates
+   - For files: Specify file name (e.g., 'customer.csv')
+   - For domains: Specify domain name (e.g., 'customer domain')
+
+2. **Domain Distribution Report** - Show data distribution by categories
+   - Example: 'How many customers by country'
+   - Example: 'Product distribution by category'
+
+3. **Data Quality Report** - Data quality validation metrics
+
+📈 **Available Chart Types:**
+- Bar Chart (default)
+- Pie Chart
+- Donut Chart
+- Line Chart
+- Stacked Chart
+
+What type of report would you like to generate? Please specify:
+- What data source (file name or domain)?
+- What type of analysis?
+- Preferred chart type (optional)""",
+            version=PromptVersion.V2_0,
+            description="Template for showing available report and chart options",
+            tags=["system", "clarification", "reports"]
         )
     
     @staticmethod
