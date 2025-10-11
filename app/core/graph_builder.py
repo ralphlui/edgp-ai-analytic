@@ -351,11 +351,6 @@ def build_analytics_graph(
     return graph.compile()
 
 
-
-# Legacy compatibility - default instance
-def build_app():
-    """Legacy function for backward compatibility."""
-    return build_analytics_graph()
 """
 LangGraph builder for analytic processing workflow.
 """
