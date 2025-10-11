@@ -87,6 +87,13 @@ AWS_DEFAULT_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 DYNAMODB_TRACKER_TABLE_NAME = os.getenv("DYNAMODB_TRACKER_TABLE_NAME")
 DYNAMODB_HEADER_TABLE_NAME = os.getenv("DYNAMODB_HEADER_TABLE_NAME")
 DYNAMODB_CONVERSATIONS_TABLE_NAME = os.getenv("DYNAMODB_CONVERSATIONS_TABLE_NAME", "conversation_history")
+DYNAMODB_PENDING_INTENTS_TABLE = os.getenv("DYNAMODB_PENDING_INTENTS_TABLE", "analytic_pending_intents")
+
+# Pending intent configuration
+PENDING_INTENT_TTL_HOURS = int(os.getenv("PENDING_INTENT_TTL_HOURS", "24"))  # Auto-delete after 24 hours
+
+# AWS Region for services
+AWS_REGION = AWS_DEFAULT_REGION
 
 # Admin API configuration
 ADMIN_API_BASE_URL = os.getenv("ADMIN_URL")

@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
 from app.auth import bearer_scheme, validate_jwt_token
-from app.services.query_coordinator import QueryCoordinator, PromptRequest
+from app.services.query_processor import QueryProcessor, PromptRequest
 from app.services.audit_sqs_service import get_audit_sqs_service
 
 # Setup logging
@@ -35,7 +35,7 @@ app = FastAPI(
 )
 
 # Initialize query coordinator
-coordinator = QueryCoordinator()
+query_processor = QueryProcessor()
 
 @app.post("/api/analytics/query", response_model=Dict[str, Any])
 async def receive_prompt(
@@ -71,7 +71,7 @@ async def receive_prompt(
         prompt = request.prompt
         
         # Process the validated request
-        result = await coordinator.process_query(request, http_request, credentials)
+        result = await query_processor.query_handler(request, http_request, credentials)
         
         # Send audit log before returning response
         #if ENABLE_SQS_AUDIT_LOGGING and user_id:
@@ -142,6 +142,29 @@ async def receive_prompt(
                 processing_time_ms=processing_time_ms,
                 error_message=str(e)
             )
+        
+        return {
+            "success": False,
+            "message": "An unexpected error occurred",
+            "chart_image": None
+        }
+    
+
+@app.post("/api/analytics/userprompt", response_model=Dict[str, Any])
+async def receive_userprompt(
+    http_request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> Dict[str, Any]:
+    
+    try:
+          
+        request_data = await http_request.json()
+        request = PromptRequest(**request_data)
+        result = await query_processor.query_handler(request, http_request, credentials)        
+        return result
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error in API endpoint: {e}")
         
         return {
             "success": False,
