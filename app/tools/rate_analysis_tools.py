@@ -67,22 +67,9 @@ def get_file_analysis_rates_tool(
         chart_type: Type of chart to generate ('auto', 'bar', 'pie', 'donut', 'line', 'stacked'). Default is 'auto'.
         report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
     """
-    # Preserve raw chart request for 'auto' handling
-    _raw_chart_type = chart_type
-    # Validate report_type
-    #report_type = validate_report_type(report_type)
-    # Validate chart_type when explicitly provided (not auto)
-    # if _raw_chart_type and _raw_chart_type != "auto":
-    #     chart_type = validate_chart_type(_raw_chart_type)
-    # else:
-    #     chart_type = None  # we will decide later
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
-    
-    # if captured_org_id is None:
-    #     logger.error("No org_id available from context variables or session bindings")
-    #     return create_auth_error_response(return_as_json=True)
     
     try:
         # Execute database call using shared utility
@@ -91,9 +78,6 @@ def get_file_analysis_rates_tool(
             "get_success_rate_by_file_name",
             file_name, captured_org_id, start_date, end_date
         )
-
-        # Choose chart type if not provided or set to auto
-        #chart_type_final = chart_type or _recommend_chart_type(result, report_type)
 
         return format_tool_response(result, chart_type, "get_file_analysis_rates_tool", return_as_json=True, report_type=report_type)
 
@@ -127,15 +111,6 @@ def get_domain_analysis_rates_tool(
         chart_type: Type of chart to generate ('auto', 'bar', 'pie', 'donut', 'line', 'stacked'). Default is 'auto'.
         report_type: Type of report to generate ('success', 'failure', 'both'). REQUIRED - must be specified.
     """
-    # Preserve raw chart request for 'auto' handling
-    # _raw_chart_type = chart_type
-    # Validate report_type
-    #report_type = validate_report_type(report_type)
-    # Validate chart_type when explicitly provided (not auto)
-    # if _raw_chart_type and _raw_chart_type != "auto":
-    #     chart_type = validate_chart_type(_raw_chart_type)
-    # else:
-    #     chart_type = None  # we will decide later
     
     # Clean up domain_name - remove "_domain" suffix if present
     if domain_name and domain_name.endswith('_domain'):
@@ -143,10 +118,6 @@ def get_domain_analysis_rates_tool(
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
-    
-    # if captured_org_id is None:
-    #     logger.error("No org_id available from context variables or session bindings")
-    #     return create_auth_error_response(return_as_json=True)
     
     try:
         # Execute database call using shared utility
@@ -156,9 +127,6 @@ def get_domain_analysis_rates_tool(
             "get_success_rate_by_domain_name",
             domain_name, captured_org_id, start_date, end_date
         )
-
-        # Choose chart type if not provided or set to auto
-        #chart_type_final = chart_type or _recommend_chart_type(result, report_type)
 
         return format_tool_response(result, chart_type, "get_domain_analysis_rates_tool", return_as_json=True, report_type=report_type)
 
@@ -196,15 +164,6 @@ def get_rule_validation_rates_tool(
     Returns:
         JSON string with rule validation rates, counts, performance assessment, and chart data
     """
-    # Preserve raw chart request for 'auto' handling
-    # _raw_chart_type = chart_type
-    # Validate report_type
-    # report_type = validate_report_type(report_type)
-    # Validate chart_type when explicitly provided (not auto)
-    # if _raw_chart_type and _raw_chart_type != "auto":
-    #     chart_type = validate_chart_type(_raw_chart_type)
-    # else:
-    #     chart_type = None  # we will decide later
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
@@ -225,9 +184,6 @@ def get_rule_validation_rates_tool(
         if result.get("success"):
             failure_rate = result.get("failure_rate", 0)
             add_performance_assessment(result, failure_rate, "rule")
-
-        # Choose chart type if not provided or set to auto
-        #chart_type_final = chart_type or _recommend_chart_type(result, report_type)
 
         return format_tool_response(result, chart_type, "get_rule_validation_rates_tool", return_as_json=True, report_type=report_type)
 
@@ -265,23 +221,10 @@ def get_data_quality_validation_rates_tool(
     Returns:
         JSON string with data quality validation rates, counts, performance assessment, and chart data
     """
-    # Preserve raw chart request for 'auto' handling
-    # _raw_chart_type = chart_type
-    # Validate report_type
-    # report_type = validate_report_type(report_type)
-    # Validate chart_type when explicitly provided (not auto)
-    # if _raw_chart_type and _raw_chart_type != "auto":
-    #     chart_type = validate_chart_type(_raw_chart_type)
-    # else:
-    #     chart_type = None  # we will decide later
     
     # Get org_id using shared utility
     captured_org_id = get_org_id_for_tool()
     
-    # if captured_org_id is None:
-    #     logger.error("No org_id available from context variables or session bindings")
-    #     return create_auth_error_response(return_as_json=True)
-
     try:
         # Execute database call using shared utility
         logger.info("Calculating data quality validation rates using org_id: %s", captured_org_id)

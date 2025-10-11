@@ -192,20 +192,6 @@ class QueryCoordinator:
         except Exception as e:
             logger.warning(f"Failed to store error interaction: {e}")
 
-    # def _log_debug_info(
-    #     self,
-    #     original_prompt: str,
-    #     result: Dict[str, Any]
-    # ) -> None:
-    #     """Log debug information if debug logging is enabled."""
-    #     if logger.isEnabledFor(logging.DEBUG):
-    #         logger.debug(f"Prompt: '{original_prompt[:50]}...'")
-    #         logger.debug(f"Success: {result.get('success', False)}")
-    #         if result.get("file_name"):
-    #             logger.debug(f"File: {result['file_name']}")
-    #         if result.get("domain_name"):
-    #             logger.debug(f"Domain: {result['domain_name']}")
-
     def _create_error_response(self, error_type: str, details: str) -> Dict[str, Any]:
         """Create standardized error response."""
         return {

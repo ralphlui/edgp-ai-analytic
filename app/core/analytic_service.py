@@ -9,8 +9,6 @@ from app.tools import (
     ANALYSIS_TOOLS
 )
 from app.utils.report_type import get_report_type
-from app.utils.sanitization import sanitize_filename
-from app.config import OPENAI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -184,39 +182,6 @@ IMPORTANT GUIDELINES FOR TOOL USE:
         
         return base_system + enhanced_instructions
 
-    # @staticmethod
-    # def _extract_conversation_insights(conversation_history: List[Dict[str, Any]]) -> str:
-    #     """Extract key insights from conversation history for LLM context."""
-    #     if not conversation_history:
-    #         return "No previous conversation history."
-        
-    #     insights = []
-    #     recent_interactions = conversation_history[-3:]
-        
-    #     for i, interaction in enumerate(recent_interactions, 1):
-    #         response = interaction.get("response_summary", {})
-            
-    #         insight_parts = [f"Interaction {i}:"]
-            
-    #         if response.get("file_name"):
-    #             safe_filename = sanitize_filename(response['file_name'])
-    #             insight_parts.append(f"  - Analyzed file: {safe_filename}")
-            
-    #         if response.get("domain_name"):
-    #             domain = response['domain_name']
-    #             insight_parts.append(f"  - Analyzed domain: {domain}")
-            
-    #         if response.get("report_type"):
-    #             report_type = response['report_type']
-    #             insight_parts.append(f"  - Report type: {report_type}")
-            
-    #         if response.get("row_count"):
-    #             row_count = response['row_count']
-    #             insight_parts.append(f"  - Data points: {row_count}")
-            
-    #         insights.append("\n".join(insight_parts))
-        
-    #     return "\n".join(insights) if insights else "No significant previous interactions."
 
     @staticmethod
     async def process_query_with_report_type(prompt: str, report_type: str, user_id: str = None,
@@ -245,15 +210,6 @@ IMPORTANT GUIDELINES FOR TOOL USE:
 
         # Get current date for context
         current_date = date.today().strftime('%Y-%m-%d')
-
-        # Get reference context from memory service
-        # Extract conversation insights
-        # conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
-        # print(f"Conversation insights for LLM: {conversation_insights}")
-        # print(f"Conversation conversation_history for LLM: {conversation_history}")
-
-        # Create enhanced system message with reference resolution
-        #conversation_insights = AnalyticService._extract_conversation_insights(conversation_history or [])
         system_message = AnalyticService._create_enhanced_system_message(
             current_date, conversation_history
         )
@@ -274,17 +230,10 @@ IMPORTANT GUIDELINES FOR TOOL USE:
                     logger.info(f"Added user prompt to message: '{messages}...'")
 
                 
-                # Skip adding previous response summaries to avoid misleading the LLM
-                # The LLM should focus on the current query rather than cached summaries
-
         # Add the current prompt
         safe_prompt = sanitize_text_input(prompt, 300)
         messages.append(HumanMessage(content=safe_prompt))
 
-        # Prepare state with V2 typed state structure
-        # Note: Don't pass pre-classified report_type to LLM - let LLM decide based on prompt
-        # Note: user_id is NOT included in state - multi-tenant isolation uses contextvars
-        # (see app.utils.request_context.USER_ID_CTX set at API layer)
         state = {
             "messages": messages,
             "loop_count": 0,
@@ -348,13 +297,6 @@ Please verify your file or domain references and try again.
             if message_type == 'AIMessage' and getattr(m, 'tool_calls', None):
                 for tool_call in m.tool_calls:
                     args = tool_call.get('args', {})
-                    
-                    # Extract chart type if explicitly requested by user
-                    # if args.get('chart_type'):
-                    #     chart_type = args.get('chart_type')
-                    #     chart_type_source = "requested"
-                    #     logger.info(f"Chart type requested: {chart_type}")
-                    
                     # Extract report type detected by LLM
                     if args.get('report_type'):
                         llm_detected_report_type = args.get('report_type')
@@ -410,30 +352,12 @@ Please verify your file or domain references and try again.
         # Optionally confirm chart type before generation if it wasn't explicitly requested
         chart_image = None
         chart_generated = False
-        # if filtered_chart_data:
-        #     # If the chart type was auto/default (user didn't specify), return a confirmation prompt first
-        #     if chart_type_source in ("auto", "default"):
-        #         confirmation_message = (
-        #             f"I'll use a '{chart_type or 'bar'}' chart for this analysis. "
-        #             "Reply 'yes' to confirm, or specify a chart type (pie, line, donut, stacked)."
-        #         )
-        #         return {
-        #             "success": False,
-        #             "requires_confirmation": True,
-        #             "message": confirmation_message,
-        #             "proposed_chart_type": chart_type or "bar",
-        #             "file_name": file_name,
-        #             "domain_name": domain_name,
-        #             "row_count": row_count,
-        #             "report_type": final_report_type
-        #         }
 
         try:
                 # Ensure chart_type has a sensible default
                 #chart_type = chart_type or "bar"
                 chart_image = chart_generator.generate_chart(
                     chart_data=filtered_chart_data,
-                    #chart_data=chart_data,
                     chart_type=chart_type,
                     file_name=file_name or domain_name,
                     report_type=final_report_type
@@ -530,13 +454,5 @@ Please verify your file or domain references and try again.
             "report_type": final_report_type,
             "chart_type": chart_type
         }
-
-        # Optionally include metadata about redactions for observability (no sensitive data included)
-        # try:
-        #     if INCLUDE_REDACTION_METADATA and 'redaction_stats' in locals() and redaction_stats:
-        #         result["redaction_stats"] = redaction_stats
-        # except Exception:
-        #     pass
-
 
         return result
