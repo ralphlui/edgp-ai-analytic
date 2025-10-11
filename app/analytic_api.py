@@ -40,7 +40,6 @@ coordinator = QueryCoordinator()
 @app.post("/api/analytics/query", response_model=Dict[str, Any])
 async def receive_prompt(
     http_request: Request,
-    response: Response,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
 ) -> Dict[str, Any]:
     """
@@ -72,7 +71,7 @@ async def receive_prompt(
         prompt = request.prompt
         
         # Process the validated request
-        result = await coordinator.process_query(request, http_request, response, credentials)
+        result = await coordinator.process_query(request, http_request, credentials)
         
         # Send audit log before returning response
         #if ENABLE_SQS_AUDIT_LOGGING and user_id:

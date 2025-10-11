@@ -23,7 +23,7 @@ from .rate_analysis_tools import (
 
 from .domain_analytics_tools import (
     get_domain_analytics_by_field_tool,
-    analyze_query_for_domain_analytics_tool
+    #analyze_query_for_domain_analytics_tool
 )
 
 from .session_manager import (
@@ -42,7 +42,7 @@ __all__ = [
     
     # Domain analytics tools
     "get_domain_analytics_by_field_tool",
-    "analyze_query_for_domain_analytics_tool",
+    #"analyze_query_for_domain_analytics_tool",
     
     # Session management
     "bind_session_to_tenant",
@@ -58,5 +58,5 @@ ANALYSIS_TOOLS = [
     get_rule_validation_rates_tool,
     get_data_quality_validation_rates_tool,
     get_domain_analytics_by_field_tool,
-    analyze_query_for_domain_analytics_tool
+    #analyze_query_for_domain_analytics_tool
 ]

@@ -184,39 +184,39 @@ IMPORTANT GUIDELINES FOR TOOL USE:
         
         return base_system + enhanced_instructions
 
-    @staticmethod
-    def _extract_conversation_insights(conversation_history: List[Dict[str, Any]]) -> str:
-        """Extract key insights from conversation history for LLM context."""
-        if not conversation_history:
-            return "No previous conversation history."
+    # @staticmethod
+    # def _extract_conversation_insights(conversation_history: List[Dict[str, Any]]) -> str:
+    #     """Extract key insights from conversation history for LLM context."""
+    #     if not conversation_history:
+    #         return "No previous conversation history."
         
-        insights = []
-        recent_interactions = conversation_history[-3:]
+    #     insights = []
+    #     recent_interactions = conversation_history[-3:]
         
-        for i, interaction in enumerate(recent_interactions, 1):
-            response = interaction.get("response_summary", {})
+    #     for i, interaction in enumerate(recent_interactions, 1):
+    #         response = interaction.get("response_summary", {})
             
-            insight_parts = [f"Interaction {i}:"]
+    #         insight_parts = [f"Interaction {i}:"]
             
-            if response.get("file_name"):
-                safe_filename = sanitize_filename(response['file_name'])
-                insight_parts.append(f"  - Analyzed file: {safe_filename}")
+    #         if response.get("file_name"):
+    #             safe_filename = sanitize_filename(response['file_name'])
+    #             insight_parts.append(f"  - Analyzed file: {safe_filename}")
             
-            if response.get("domain_name"):
-                domain = response['domain_name']
-                insight_parts.append(f"  - Analyzed domain: {domain}")
+    #         if response.get("domain_name"):
+    #             domain = response['domain_name']
+    #             insight_parts.append(f"  - Analyzed domain: {domain}")
             
-            if response.get("report_type"):
-                report_type = response['report_type']
-                insight_parts.append(f"  - Report type: {report_type}")
+    #         if response.get("report_type"):
+    #             report_type = response['report_type']
+    #             insight_parts.append(f"  - Report type: {report_type}")
             
-            if response.get("row_count"):
-                row_count = response['row_count']
-                insight_parts.append(f"  - Data points: {row_count}")
+    #         if response.get("row_count"):
+    #             row_count = response['row_count']
+    #             insight_parts.append(f"  - Data points: {row_count}")
             
-            insights.append("\n".join(insight_parts))
+    #         insights.append("\n".join(insight_parts))
         
-        return "\n".join(insights) if insights else "No significant previous interactions."
+    #     return "\n".join(insights) if insights else "No significant previous interactions."
 
     @staticmethod
     async def process_query_with_report_type(prompt: str, report_type: str, user_id: str = None,
@@ -267,6 +267,7 @@ IMPORTANT GUIDELINES FOR TOOL USE:
             logger.info(f"Reduced conversation history to last 10 interactions: {recent_interactions}")
             
             for interaction in recent_interactions:
+
                 if interaction.get("user_prompt"):
                     safe_prompt = sanitize_text_input(interaction['user_prompt'], 150)
                     messages.append(HumanMessage(content=safe_prompt))
@@ -326,62 +327,71 @@ Please verify your file or domain references and try again.
         domain_name = None
         row_count = 0
         date_filter_used = None
+        # Initialize variables for data extraction
+        chart_data = []
+        file_name = None
+        domain_name = None
+        row_count = 0
+        date_filter_used = None
         chart_type = "bar"
         chart_type_source = "default"  # one of: default, auto, requested
         llm_detected_report_type = None  # Track LLM-detected report type
 
+        # Extract data from messages (process in order: AI decisions first, then tool results)
         for m in compiled_result.get("messages", []):
-            if hasattr(m, 'content') and hasattr(m, '__class__'):
-                # Handle ToolMessage
-                if m.__class__.__name__ == 'ToolMessage':
-                    try:
-                        tool_data = json.loads(m.content) if isinstance(m.content, str) else m.content
-                        tool_results.append(tool_data)
-                        logger.info(f"Tool result: {tool_data}")
-
-                        if tool_data.get("success") and "chart_data" in tool_data:
-                            chart_data = tool_data.get("chart_data", [])
-                            file_name = tool_data.get("file_name")
-                            domain_name = tool_data.get("domain_name")
-                            row_count = tool_data.get("row_count", 0)
-
-                            # Respect chart type returned by tool. If it was explicitly requested, mark as requested; otherwise mark as auto.
-                            if "chart_type" in tool_data:
-                                # Do not override an explicitly requested chart type detected earlier
-                                if chart_type_source != "requested":
-                                    chart_type = tool_data.get("chart_type", chart_type or "bar")
-                                    chart_type_source = "requested" if tool_data.get("chart_type_requested") else "auto"
-                                    logger.info(f"Chart type from tool: {chart_type} (source: {chart_type_source})")
-
-                            # Extract LLM-detected report type
-                            if tool_data.get("report_type_requested"):
-                                llm_detected_report_type = tool_data.get("report_type")
-                                logger.info(f"LLM detected report_type: {llm_detected_report_type}")
-
-                            if tool_data.get("date_filter"):
-                                date_filter_used = tool_data.get("date_filter")
-                    except Exception as e:
-                        logger.warning(f"Failed to parse tool message: {e}")
-                        tool_results.append(str(m.content))
-
-                # Handle AIMessage with tool calls
-                elif m.__class__.__name__ == 'AIMessage' and getattr(m, 'tool_calls', None):
-                    for tool_call in m.tool_calls or []:
-                        if tool_call.get('args'):
-                            args = tool_call['args']
-                            if args.get('start_date') or args.get('end_date'):
-                                date_filter_used = {
-                                    'start_date': args.get('start_date'),
-                                    'end_date': args.get('end_date')
-                                }
-                            if args.get('chart_type'):
-                                chart_type = args.get('chart_type')
-                                chart_type_source = "requested"
-                            
-                            # Extract report_type from tool call arguments
-                            if args.get('report_type'):
-                                llm_detected_report_type = args.get('report_type')
-                                logger.info(f"LLM tool call specified report_type: {llm_detected_report_type}")
+            if not (hasattr(m, 'content') and hasattr(m, '__class__')):
+                continue
+            
+            message_type = m.__class__.__name__
+            
+            # 1. Extract LLM's intent/decisions from AIMessage with tool_calls
+            if message_type == 'AIMessage' and getattr(m, 'tool_calls', None):
+                for tool_call in m.tool_calls:
+                    args = tool_call.get('args', {})
+                    
+                    # Extract chart type if explicitly requested by user
+                    # if args.get('chart_type'):
+                    #     chart_type = args.get('chart_type')
+                    #     chart_type_source = "requested"
+                    #     logger.info(f"Chart type requested: {chart_type}")
+                    
+                    # Extract report type detected by LLM
+                    if args.get('report_type'):
+                        llm_detected_report_type = args.get('report_type')
+                        logger.info(f"Report type from LLM: {llm_detected_report_type}")
+            
+            # 2. Extract actual data from ToolMessage (tool execution results)
+            elif message_type == 'ToolMessage':
+                try:
+                    tool_data = json.loads(m.content) if isinstance(m.content, str) else m.content
+                    tool_results.append(tool_data)
+                    
+                    # Extract actual data from tool execution
+                    chart_data = tool_data.get("chart_data", chart_data)
+                    file_name = tool_data.get("file_name", file_name)
+                    domain_name = tool_data.get("domain_name", domain_name)
+                    row_count = tool_data.get("row_count", row_count)
+                    
+                    # Extract actual date filter used in database query (more reliable than LLM parsing)
+                    if tool_data.get("date_filter"):
+                        date_filter_used = tool_data["date_filter"]
+                        logger.info(f"Date filter actually used: {date_filter_used}")
+                    
+                    # Tool may suggest chart type based on data analysis
+                    #if "chart_type" in tool_data and chart_type_source != "requested":
+                    if "chart_type" in tool_data :
+                        chart_type = tool_data.get("chart_type", chart_type)
+                        chart_type_source = "auto"
+                        logger.info(f"Chart type auto-selected by tool: {chart_type}")
+                    
+                    logger.info(f"Tool executed - file: {file_name}, domain: {domain_name}, rows: {row_count}")
+                    
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse tool message as JSON: {e}")
+                    tool_results.append(str(m.content))
+                except Exception as e:
+                    logger.warning(f"Error processing tool message: {e}")
+                    tool_results.append(str(m.content))
     
         # Smart decision logic: prioritize clear pre-classification over ambiguous LLM detection
         final_report_type = llm_detected_report_type
@@ -400,36 +410,37 @@ Please verify your file or domain references and try again.
         # Optionally confirm chart type before generation if it wasn't explicitly requested
         chart_image = None
         chart_generated = False
-        if filtered_chart_data:
-            # If the chart type was auto/default (user didn't specify), return a confirmation prompt first
-            if chart_type_source in ("auto", "default"):
-                confirmation_message = (
-                    f"I'll use a '{chart_type or 'bar'}' chart for this analysis. "
-                    "Reply 'yes' to confirm, or specify a chart type (pie, line, donut, stacked)."
-                )
-                return {
-                    "success": False,
-                    "requires_confirmation": True,
-                    "message": confirmation_message,
-                    "proposed_chart_type": chart_type or "bar",
-                    "file_name": file_name,
-                    "domain_name": domain_name,
-                    "row_count": row_count,
-                    "report_type": final_report_type
-                }
+        # if filtered_chart_data:
+        #     # If the chart type was auto/default (user didn't specify), return a confirmation prompt first
+        #     if chart_type_source in ("auto", "default"):
+        #         confirmation_message = (
+        #             f"I'll use a '{chart_type or 'bar'}' chart for this analysis. "
+        #             "Reply 'yes' to confirm, or specify a chart type (pie, line, donut, stacked)."
+        #         )
+        #         return {
+        #             "success": False,
+        #             "requires_confirmation": True,
+        #             "message": confirmation_message,
+        #             "proposed_chart_type": chart_type or "bar",
+        #             "file_name": file_name,
+        #             "domain_name": domain_name,
+        #             "row_count": row_count,
+        #             "report_type": final_report_type
+        #         }
 
-            try:
+        try:
                 # Ensure chart_type has a sensible default
-                chart_type = chart_type or "bar"
+                #chart_type = chart_type or "bar"
                 chart_image = chart_generator.generate_chart(
                     chart_data=filtered_chart_data,
+                    #chart_data=chart_data,
                     chart_type=chart_type,
                     file_name=file_name or domain_name,
                     report_type=final_report_type
                 )
                 chart_generated = True
                 logger.info(f"Generated {chart_type} chart for {file_name or domain_name}")
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"Failed to generate chart: {e}")
 
         # Extract LLM interpretation from graph results

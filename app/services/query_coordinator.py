@@ -69,7 +69,6 @@ class QueryCoordinator:
         self,
         request: PromptRequest,
         http_request: Request,
-        response: Response,
         credentials: HTTPAuthorizationCredentials
     ) -> Dict[str, Any]:
         """
@@ -96,7 +95,7 @@ class QueryCoordinator:
             if not user_id or not org_id:
                 raise ValueError("JWT missing required claims: sub (user_id) or orgId")
 
-            logger.info(f"JWT validated - user: {user_id[:8]}..., org: {org_id[:8]}...")
+            logger.info(f"JWT validated - user..., org:...")
 
             # 2) Bind tenant context for downstream tools (contextvars)
             req_session_id = request.session_id or f"req-{int(time.time()*1000)}-{user_id[:8]}"
