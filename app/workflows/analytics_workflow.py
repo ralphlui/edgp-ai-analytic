@@ -148,6 +148,15 @@ Select the appropriate analytics tool and call it with the correct parameters.""
                 if tool.name == tool_name:
                     result = tool.invoke(tool_args)
                     logger.info(f"✅ Tool execution complete: success={result.get('success')}")
+                    
+                    # Store which tool was called for accurate chart filtering
+                    if "data" in result and isinstance(result["data"], dict):
+                        # Determine report_type from the tool that was called
+                        if "success_rate" in tool_name:
+                            result["data"]["_report_type"] = "success_rate"
+                        elif "failure_rate" in tool_name:
+                            result["data"]["_report_type"] = "failure_rate"
+                    
                     return {"tool_result": result}
             
             # Tool not found (shouldn't happen)
@@ -181,10 +190,14 @@ Select the appropriate analytics tool and call it with the correct parameters.""
 
 def generate_chart_node(state: AnalyticsState) -> dict:
     """
-    Generate chart from raw analytics data.
+    Generate chart from raw analytics data, filtered by report_type.
     
     This node runs after tool execution and creates a base64-encoded
     chart visualization that will be included in the final response.
+    
+    Report Type Filtering:
+    - "success_rate": Show only success data in chart
+    - "failure_rate": Show only failure data in chart
     """
     tool_result = state["tool_result"]
     
@@ -195,21 +208,86 @@ def generate_chart_node(state: AnalyticsState) -> dict:
     
     # Get data and report type
     data = tool_result.get("data", {})
-    report_type = state["extracted_data"].get("report_type", "success_rate")
+    
+    # Determine report_type from the actual tool that was called (stored in data)
+    # This is more reliable than using extracted_data which might be incorrect
+    report_type = data.get("_report_type")
+    
+    # Fallback to extracted_data if not found in tool result
+    if not report_type:
+        report_type = state["extracted_data"].get("report_type", "both")
+        logger.warning(f"⚠️ Report type not found in tool result, using extracted_data: {report_type}")
+    else:
+        logger.info(f"✅ Using report type from tool result: {report_type}")
     
     # Skip chart if no data
     if data.get("total_requests", 0) == 0:
         logger.warning("⚠️ Skipping chart generation (no data available)")
         return {"chart_image": None}
     
-    # Generate chart
+    # Filter chart data based on report_type
+    logger.info(f"📊 Filtering chart data for report_type: {report_type}")
+    
+    filtered_data = data.copy()  # Start with full data
+    
+    if report_type == "success_rate":
+        # For success rate reports, show only success data
+        success_rate = data.get("success_rate", 0)
+        successful_requests = data.get("successful_requests", 0)
+        failed_requests = data.get("failed_requests", 0)
+        
+        logger.info(f"✅ Success-only chart: {success_rate}% ({successful_requests} items)")
+        logger.info(f"   Note: {failed_requests} failures excluded from chart")
+        
+        # Override data to show only success
+        filtered_data = {
+            "total_requests": successful_requests,  # Only successful
+            "successful_requests": successful_requests,
+            "failed_requests": 0,  # Don't show failures
+            "success_rate": 100.0,  # 100% of filtered data is success
+            "target_type": data.get("target_type"),
+            "target_value": data.get("target_value"),
+            "_original_total": data.get("total_requests"),  # Keep for context
+            "_excluded_failures": failed_requests,
+            "_actual_success_rate": success_rate
+        }
+        
+    elif report_type == "failure_rate":
+        # For failure rate reports, show only failure data
+        failure_rate = data.get("failure_rate", 100 - data.get("success_rate", 0))
+        failed_requests = data.get("failed_requests", 0)
+        successful_requests = data.get("successful_requests", 0)
+        
+        logger.info(f"❌ Failure-only chart: {failure_rate}% ({failed_requests} items)")
+        logger.info(f"   Note: {successful_requests} successes excluded from chart")
+        
+        # Override data to show only failures
+        filtered_data = {
+            "total_requests": failed_requests,  # Only failures
+            "successful_requests": 0,  # Don't show successes
+            "failed_requests": failed_requests,
+            "success_rate": 0.0,  # 0% success (all failures)
+            "failure_rate": 100.0,  # 100% of filtered data is failure
+            "target_type": data.get("target_type"),
+            "target_value": data.get("target_value"),
+            "_original_total": data.get("total_requests"),  # Keep for context
+            "_excluded_successes": successful_requests,
+            "_actual_failure_rate": failure_rate
+        }
+        
+    else:  # "both" or any other value
+        # Show complete data (both success and failure)
+        logger.info(f"📊 Combined chart: Success {data.get('success_rate', 0)}% + Failure {100 - data.get('success_rate', 0)}%")
+        # filtered_data already contains full data
+    
+    # Generate chart with filtered data
     from app.services.chart_service import generate_analytics_chart
     
     logger.info(f"📊 Generating {report_type} chart...")
     
     try:
         chart_base64 = generate_analytics_chart(
-            data=data,
+            data=filtered_data,
             chart_type=report_type,
             style="bar"
         )
