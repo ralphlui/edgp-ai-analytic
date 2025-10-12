@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-from app.config import DYNAMODB_TRACKER_TABLE_NAME
+from app.config import DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME
 
 logger = logging.getLogger("analytic_agent")
 
@@ -34,12 +34,14 @@ class AnalyticsRepository:
         Initialize the analytics repository.
         
         Args:
-            table_name: Name of the DynamoDB table
+            table_name: Name of the DynamoDB tracker table
         """
         self.dynamodb = boto3.resource('dynamodb')
         self.table = self.dynamodb.Table(table_name)
+        self.header_table = self.dynamodb.Table(DYNAMODB_HEADER_TABLE_NAME)
         self.table_name = table_name
-        logger.info(f"📊 Initialized AnalyticsRepository with table: {table_name}")
+        logger.info(f"📊 Initialized AnalyticsRepository with tracker table: {table_name}")
+        logger.info(f"📊 Header table: {DYNAMODB_HEADER_TABLE_NAME}")
     
     def get_success_rate_by_domain(
         self,
@@ -248,22 +250,41 @@ class AnalyticsRepository:
         file_name: str
     ) -> List[Dict[str, Any]]:
         """
-        Scan DynamoDB for events by file name (no GSI required).
+        Query DynamoDB for events by file name.
+        First retrieves file_id from header table, then queries tracker table.
         
         Args:
             file_name: File to query
         Returns:
             List of items from DynamoDB
         """
-        logger.info(f"🔍 Scanning DynamoDB table '{self.table_name}' for file: {file_name}")
+        logger.info(f"🔍 Querying for file: {file_name}")
 
         items = []
         
         try:
-            # Use scan with filter expression (no GSI required)
-            logger.info(f"📊 Using SCAN with FilterExpression (no GSI)")
-            response = self.table.scan(
+            # Step 1: Get file_id from header table using file_name
+            logger.info(f"📋 Step 1: Looking up file_id from header table for file_name: {file_name}")
+            header_response = self.header_table.scan(
                 FilterExpression=Attr('file_name').eq(file_name)
+            )
+            
+            header_items = header_response.get('Items', [])
+            if not header_items:
+                logger.warning(f"⚠️ No file_id found in header table for file_name: {file_name}")
+                return []
+            
+            file_id = header_items[0].get('id')
+            if not file_id:
+                logger.error(f"❌ Header record found but 'id' field is missing for file_name: {file_name}")
+                return []
+            
+            logger.info(f"✅ Resolved file_name '{file_name}' -> file_id '{file_id}'")
+            
+            # Step 2: Query tracker table using file_id and get final_status
+            logger.info(f"📊 Step 2: Scanning tracker table for file_id: {file_id}")
+            response = self.table.scan(
+                FilterExpression=Attr('file_id').eq(file_id)
             )
             
             items.extend(response.get('Items', []))
@@ -273,24 +294,25 @@ class AnalyticsRepository:
             while 'LastEvaluatedKey' in response:
                 logger.info(f"📄 Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
-                    FilterExpression=Attr('file_name').eq(file_name),
+                    FilterExpression=Attr('file_id').eq(file_id),
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))
             
-            logger.info(f"✅ Retrieved {len(items)} total items from DynamoDB")
+            logger.info(f"✅ Retrieved {len(items)} total items from tracker table")
             
             # Debug: Log first item if available
             if items:
                 first_item = items[0]
                 logger.info(f"🔍 Sample item fields: {list(first_item.keys())}")
+                logger.info(f"🔍 Sample item file_id: {first_item.get('file_id')}")
                 logger.info(f"🔍 Sample item final_status: {first_item.get('final_status')}")
             else:
-                logger.warning(f"⚠️ No items found for file: {file_name}")
+                logger.warning(f"⚠️ No items found in tracker table for file_id: {file_id}")
             
         except Exception as e:
-            logger.exception(f"❌ Error scanning DynamoDB: {e}")
-            logger.error(f"❌ Table: {self.table_name}, File: {file_name}")
+            logger.exception(f"❌ Error querying DynamoDB: {e}")
+            logger.error(f"❌ Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name}")
             # Return empty list on error
             return []
         
@@ -360,6 +382,8 @@ class AnalyticsRepository:
             if final_status == 'success':
                 daily_stats[date]['success'] += 1
             elif final_status == 'failure':
+                daily_stats[date]['failure'] += 1
+            else:
                 daily_stats[date]['failure'] += 1
         
         # Build time series list
