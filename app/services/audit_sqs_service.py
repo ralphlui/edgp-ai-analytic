@@ -60,7 +60,7 @@ class AuditSQSService:
         username: str,
         activity_type: str = "Analytics-Query",
         activity_description: str = "Analytics query processed",
-        request_endpoint: str = "api/analytics/query",
+        request_endpoint: str = "api/analytics/report",
         response_status: str = "SUCCESS",
         request_type: str = "POST",
         remarks: str = "",
@@ -153,8 +153,7 @@ class AuditSQSService:
         username: str,
         prompt: str,
         success: bool,
-        processing_time_ms: Optional[int] = None,
-        error_message: Optional[str] = None
+        message: Optional[str] = None
     ) -> bool:
         """
         Send audit log specifically for analytics query processing.
@@ -174,24 +173,19 @@ class AuditSQSService:
         safe_prompt = prompt[:100] + "..." if len(prompt) > 100 else prompt
         
         activity_description = f"Analytics query: '{safe_prompt}'"
-        if not success and error_message:
-            activity_description += f" - Error: {error_message[:100]}"
+        if not success and message:
+            activity_description += f" - Error: {message[:100]}"
         
-        additional_data = {}
-        if processing_time_ms is not None:
-            additional_data["processingTimeMs"] = processing_time_ms
-        
-        return self.send_audit_log(
+            return self.send_audit_log(
             statusCode=statusCode,
             user_id=user_id,
             username=username,
             activity_type="Analytics-Query",
             activity_description=activity_description,
-            request_endpoint="api/analytics/query",
+            request_endpoint="api/analytics/report",
             response_status="SUCCESS" if success else "FAILURE",
             request_type="POST",
-            remarks=error_message[:200] if error_message else "",
-            additional_data=additional_data
+            remarks=message[:200] if message else ""
         )
     
     def health_check(self) -> Dict[str, Any]:
