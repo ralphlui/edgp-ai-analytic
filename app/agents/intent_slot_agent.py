@@ -47,8 +47,9 @@ Your task is to extract:
 
 📋 **SUPPORTED INTENTS:**
 - "success_rate" - User wants to see success rates
-- "failure_rate" - User wants to see failure rates  
-- "general_query" - General question or unclear request
+- "failure_rate" - User wants to see failure rates
+- "general_query" - General analytics question or unclear request
+- "out_of_scope" - Non-analytics question (greetings, chitchat, unrelated topics)
 
 🎯 **SUPPORTED SLOTS:**
 - domain_name: Domain to analyze (e.g., "customer", "product", "order")
@@ -59,18 +60,30 @@ Your task is to extract:
 1. **Intent Detection:**
    - Keywords "success", "successful" → intent: "success_rate"
    - Keywords "fail", "failure", "failed", "error" → intent: "failure_rate"
+   - Greetings, chitchat, or non-analytics questions → intent: "out_of_scope"
+   - Analytics-related but unclear → intent: "general_query"
 
-2. **Slot Extraction:**
+2. **Out of Scope Detection:**
+   - Greetings: "hello", "hi", "hey", "good morning"
+   - Personal questions: "how are you", "what's your name", "who are you"
+   - Unrelated topics: "weather", "sports", "news", "recipes"
+   - Chitchat: "tell me a joke", "what can you do", "help"
+   - When detected, set intent to "out_of_scope" and clarification_needed with helpful redirect
+
+3. **Slot Extraction:**
    - File extensions (.csv, .json, .xlsx) → extract as file_name
    - Domain names without extension → extract as domain_name
 
-3. **Required Slots per Intent:**
+4. **Required Slots per Intent:**
    - success_rate/failure_rate REQUIRES: domain_name OR file_name
+   - general_query: May have partial information
+   - out_of_scope: No slots required
 
-4. **Validation:**
+5. **Validation:**
    - Check if all required slots are present
    - If missing, specify what's needed in "clarification_needed"
    - Set "is_complete" to true only if all required slots are present
+   - For out_of_scope, always set is_complete=true (complete but not actionable)
 
 📊 **EXAMPLES:**
 
@@ -123,6 +136,36 @@ Output: {
   "missing_required": ["intent", "domain_name or file_name"],
   "is_complete": false,
   "clarification_needed": "I can generate several types of reports. Please specify: 1) What type of report? (success rate, failure rate) 2) Which file or domain to analyze?"
+}
+
+Input: "hello"
+Output: {
+  "intent": "out_of_scope",
+  "slots": {},
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": "Hello! I'm an analytics assistant. I can help you analyze success rates, failure rates, and generate reports for your data. What would you like to analyze?"
+}
+
+Input: "what's the weather today?"
+Output: {
+  "intent": "out_of_scope",
+  "slots": {},
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": "I'm specialized in data analytics and can't help with weather information. I can analyze success rates, failure rates, and generate reports from your data. Would you like to analyze any data?"
+}
+
+Input: "tell me a joke"
+Output: {
+  "intent": "out_of_scope",
+  "slots": {},
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": "I'm an analytics assistant focused on data analysis. I can help you with success rate analysis, failure rate reports, and data visualizations. What analytics would you like to see?"
 }
 
 🎯 **YOUR RESPONSE FORMAT:**
@@ -205,25 +248,19 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
             Updated result with validation information
         """
         intent = result.intent
-        slots = result.slots
-        missing = []
+        result.clarification_needed = None
         
-        # Define required slots per intent
-        if intent in ["success_rate", "failure_rate"]:
-            if not slots.get("domain_name") and not slots.get("file_name"):
-                missing.append("domain_name or file_name")
-                result.clarification_needed = (
-                    "I need to know which file or domain to analyze for the rate analysis. "
-                    "Please specify a file name (e.g., 'customer.csv') or domain name (e.g., 'customer domain')."
+        # Handle out_of_scope intent - always complete but not actionable
+        if intent == "out_of_scope":
+            result.clarification_needed = (
+                    "I'm an analytics assistant specialized in data analysis. "
+                    "I can help you with success rates, failure rates, and data reports. "
+                    "What would you like to analyze?"
                 )
+            return result
+        
         elif intent == "general_query":
             # Check what's missing
-            has_target = slots.get("domain_name") or slots.get("file_name")
-            
-            if not has_target:
-                missing.append("domain_name or file_name")
-            
-            missing.append("intent (what type of analysis?)")
             
             result.clarification_needed = (
                 "I can help you with analytics! Please specify:\n"
@@ -231,8 +268,6 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
                 "2. Which file or domain to analyze?"
             )
         
-        result.missing_required = missing
-        result.is_complete = len(missing) == 0
         
         return result
 

@@ -104,6 +104,15 @@ class QueryProcessor:
             
             logger.info(f"🎯 Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
             
+            # Handle out-of-scope queries (non-analytics questions)
+            if result.clarification_needed is not None:
+                logger.info(f"📢 Out-of-scope query detected: '{request.prompt}'")
+                return {
+                    "success": False,
+                    "message": result.clarification_needed or "I'm specialized in analytics. Please ask about success rates, failure rates, or data analysis.",
+                    "chart_image": None,
+                }
+            
             # Save to DynamoDB if conditions are met
             # Conditions: Intent is success_rate OR failure_rate
             #            AND (domain_name OR file_name) is present
