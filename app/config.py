@@ -90,7 +90,7 @@ DYNAMODB_CONVERSATIONS_TABLE_NAME = os.getenv("DYNAMODB_CONVERSATIONS_TABLE_NAME
 DYNAMODB_PENDING_INTENTS_TABLE = os.getenv("DYNAMODB_PENDING_INTENTS_TABLE", "analytic_pending_intents")
 
 # Pending intent configuration
-PENDING_INTENT_TTL_HOURS = int(os.getenv("PENDING_INTENT_TTL_HOURS", "24"))  # Auto-delete after 24 hours
+PENDING_INTENT_TTL_HOURS = float(os.getenv("PENDING_INTENT_TTL_HOURS", "0.0333333"))  # Auto-delete after 24 hours
 
 # AWS Region for services
 AWS_REGION = AWS_DEFAULT_REGION

@@ -104,6 +104,60 @@ class QueryProcessor:
             
             logger.info(f"🎯 Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
             
+            # Smart Inheritance Logic: Try to inherit missing fields from previous context
+            # This enables natural multi-turn conversations
+            pending_service = get_pending_intent_service()
+            
+            # Check if we're missing report_type OR target (domain/file)
+            has_report_type = result.intent in ['success_rate', 'failure_rate']
+            has_domain = result.slots.get('domain_name') and result.slots.get('domain_name') != ''
+            has_file = result.slots.get('file_name') and result.slots.get('file_name') != ''
+            has_target = has_domain or has_file
+            
+            # If missing report_type OR target, try to inherit from previous context
+            if not has_report_type or not has_target:
+                logger.info(f"🔍 Missing fields detected - Checking for previous context to inherit...")
+                logger.info(f"   has_report_type: {has_report_type}, has_target: {has_target}")
+                
+                # Retrieve previous data (only exists if within TTL window)
+                previous_data = pending_service.get_pending_intent(user_id)
+                
+                if previous_data:
+                    logger.info(f"✅ Found previous context: {previous_data}")
+                    
+                    # Inherit missing report_type (only if previous has valid intent)
+                    if not has_report_type:
+                        prev_report_type = previous_data.get('report_type')
+                        if prev_report_type and prev_report_type in ['success_rate', 'failure_rate']:
+                            result.intent = prev_report_type
+                            logger.info(
+                                f"✨ Inherited report_type '{result.intent}' from previous prompt "
+                                f"(last updated: {previous_data.get('updated_at')})"
+                            )
+                    
+                    # Inherit missing target (domain or file)
+                    if not has_target:
+                        prev_slots = previous_data.get('slots', {})
+                        if prev_slots.get('domain_name'):
+                            result.slots['domain_name'] = prev_slots['domain_name']
+                            logger.info(f"✨ Inherited domain_name '{result.slots['domain_name']}' from previous prompt")
+                        elif prev_slots.get('file_name'):
+                            result.slots['file_name'] = prev_slots['file_name']
+                            logger.info(f"✨ Inherited file_name '{result.slots['file_name']}' from previous prompt")
+                    
+                    # Re-validate after inheritance
+                    has_report_type = result.intent in ['success_rate', 'failure_rate']
+                    has_domain = result.slots.get('domain_name') and result.slots.get('domain_name') != ''
+                    has_file = result.slots.get('file_name') and result.slots.get('file_name') != ''
+                    has_target = has_domain or has_file
+                    
+                    # Mark as complete if we now have both
+                    if has_report_type and has_target:
+                        result.is_complete = True
+                        logger.info(f"✅ Query completed after inheritance: intent={result.intent}, slots={result.slots}")
+                else:
+                    logger.info(f"⏰ No previous context found (expired or never existed)")
+            
             # Handle out-of-scope queries (non-analytics questions)
             if result.clarification_needed is not None:
                 logger.info(f"📢 Out-of-scope query detected: '{request.prompt}'")
@@ -114,17 +168,26 @@ class QueryProcessor:
                 }
             
             # Save to DynamoDB if conditions are met
-            # Conditions: Intent is success_rate OR failure_rate
-            #            AND (domain_name OR file_name) is present
-            pending_service = get_pending_intent_service()
+            # Note: Check AFTER inheritance to save merged values
+            # Conditions: Intent is success_rate OR failure_rate OR has target (domain/file)
             
-            logger.info(f"🔍 Checking if should save to DynamoDB...")
+            logger.info(f"🔍 Checking if should save to DynamoDB (after inheritance)...")
+            logger.info(f"📊 VALUES TO CHECK FOR SAVE:")
+            logger.info(f"   - Intent (after inheritance): '{result.intent}'")
+            logger.info(f"   - Slots (after inheritance): {result.slots}")
+            logger.info(f"   - Is complete (after inheritance): {result.is_complete}")
+            
             should_save = pending_service.should_save_intent(result.intent, result.slots)
             logger.info(f"💡 Should save result: {should_save}")
             
             saved_data = None
             if should_save:
-                logger.info(f"💾 Attempting to save to DynamoDB for user...")
+                logger.info(f"💾 SAVING TO DYNAMODB:")
+                logger.info(f"   - user_id: {user_id}")
+                logger.info(f"   - intent: '{result.intent}'")
+                logger.info(f"   - slots: {result.slots}")
+                logger.info(f"   - prompt: '{request.prompt}'")
+                
                 saved_data = pending_service.save_intent_and_slots(
                     user_id=user_id,
                     intent=result.intent,
@@ -133,16 +196,18 @@ class QueryProcessor:
                 )
                 
                 if saved_data:
-                    logger.info(
-                        f"Saved data: {saved_data}"
-                    )
+                    logger.info(f"✅ SAVE SUCCESSFUL:")
+                    logger.info(f"   - Saved intent: {saved_data.get('intent')}")
+                    logger.info(f"   - Saved slots: {saved_data.get('slots')}")
+                    logger.info(f"   - Saved prompts count: {len(saved_data.get('prompts', []))}")
                 else:
                     logger.error(f"❌ Failed to save to DynamoDB for user")
             else:
                 logger.info(
-                    f"⏭️ Skipping save - Intent/slots do not meet criteria: "
-                    f"intent={result.intent}, slots={result.slots}"
+                    f"⏭️ SKIPPING SAVE - Intent/slots do not meet criteria:"
                 )
+                logger.info(f"   - Intent: '{result.intent}'")
+                logger.info(f"   - Slots: {result.slots}")
             
             # Check if query is complete
             if not result.is_complete:

@@ -120,25 +120,43 @@ class PendingIntentService:
             Dict with all saved values (user_id, intent, slots, prompts, timestamps) or None if save failed
         """
         try:
-            logger.info(f"💾 Starting save for user {user_id}: intent={intent}, slots={slots}")
+            logger.info(f"💾 ========== SAVE INTENT AND SLOTS START ==========")
+            logger.info(f"💾 Input parameters:")
+            logger.info(f"   - user_id: {user_id}")
+            logger.info(f"   - intent: '{intent}'")
+            logger.info(f"   - slots: {slots}")
+            logger.info(f"   - original_prompt: '{original_prompt}'")
             
             # Check if user already has a pending intent
             existing = self.get_latest_intent(user_id)
             
             if existing:
-                logger.info(f"📝 Existing record found, appending to prompts array")
-                # Update existing record - append new prompt to prompts array
-                updated = self._append_prompt_to_existing(
+                logger.info(f"📝 Existing record found:")
+                logger.info(f"   - Current intent: '{existing.get('intent')}'")
+                logger.info(f"   - Current slots: {existing.get('slots')}")
+                logger.info(f"   - Will REPLACE with new values (REPLACE strategy)")
+                
+                # REPLACE strategy: Update existing record with new values
+                # This also refreshes the TTL
+                updated = self._update_existing_record(
                     user_id=user_id,
                     timestamp=existing['timestamp'],
-                    new_prompt=original_prompt,
-                    new_slots=slots
+                    new_intent=intent,
+                    new_slots=slots,
+                    new_prompt=original_prompt
                 )
                 
                 if updated:
                     # Return the updated record
-                    return self.get_latest_intent(user_id)
+                    final_record = self.get_latest_intent(user_id)
+                    logger.info(f"✅ Update successful, final record:")
+                    logger.info(f"   - Stored intent: '{final_record.get('intent')}'")
+                    logger.info(f"   - Stored slots: {final_record.get('slots')}")
+                    logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+                    return final_record
                 else:
+                    logger.error(f"❌ Update failed")
+                    logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
                     return None
             
             logger.info(f"📝 No existing record, creating new one")
@@ -166,15 +184,16 @@ class PendingIntentService:
                 'updated_at': datetime.now().isoformat()
             }
             
-            logger.info(f"💾 Saving item to DynamoDB: {item}")
+            logger.info(f"💾 Creating new DynamoDB item:")
+            logger.info(f"   - report_type: '{intent}'")
+            logger.info(f"   - slots: {slots}")
+            logger.info(f"   - prompts_count: {len(prompts)}")
             
             # Save to DynamoDB
             self.table.put_item(Item=item)
             
-            logger.info(
-                f"✅ Successfully saved intent and slots for user {user_id}: "
-                f"intent={intent}, slots={slots}, prompts_count={len(prompts)}"
-            )
+            logger.info(f"✅ Successfully created new record for user {user_id}")
+            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
             
             # Return the saved record with all values
             return {
@@ -187,33 +206,49 @@ class PendingIntentService:
             logger.error(f"❌ DynamoDB ClientError for user {user_id}: {e}")
             logger.error(f"Error code: {e.response['Error']['Code']}")
             logger.error(f"Error message: {e.response['Error']['Message']}")
+            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
             return None
         except Exception as e:
             logger.exception(f"❌ Unexpected error saving intent and slots: {e}")
+            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
             return None
     
-    def _append_prompt_to_existing(
+    def _update_existing_record(
         self,
         user_id: str,
         timestamp: int,
-        new_prompt: str,
-        new_slots: Dict[str, Any]
+        new_intent: str,
+        new_slots: Dict[str, Any],
+        new_prompt: str
     ) -> bool:
         """
-        Append a new prompt to an existing pending intent record.
+        Update an existing pending intent record with REPLACE strategy.
+        
+        This replaces the intent and slots with new values and appends the prompt to history.
+        TTL is also refreshed to keep active conversations alive.
         
         Args:
             user_id: The user's ID
             timestamp: Timestamp of the existing item
-            new_prompt: New prompt to append
-            new_slots: New slots to merge with existing
+            new_intent: New intent to replace existing (e.g., 'success_rate')
+            new_slots: New slots to replace existing
+            new_prompt: New prompt to append to prompts history
             
         Returns:
             bool: True if update successful, False otherwise
         """
         try:
+            logger.info(f"🔄 ========== UPDATE EXISTING RECORD START ==========")
+            logger.info(f"🔄 Update parameters:")
+            logger.info(f"   - user_id: {user_id}")
+            logger.info(f"   - timestamp: {timestamp}")
+            logger.info(f"   - new_intent: '{new_intent}'")
+            logger.info(f"   - new_slots: {new_slots}")
+            logger.info(f"   - new_prompt: '{new_prompt}'")
+            
             if not new_prompt:
-                logger.warning("No prompt to append")
+                logger.warning("⚠️ No prompt to append")
+                logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
                 return False
             
             # Create new prompt entry
@@ -222,33 +257,113 @@ class PendingIntentService:
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Update: append to prompts list and merge slots
+            # Calculate new TTL (refresh expiry time)
+            new_ttl = int((datetime.now() + timedelta(hours=self.ttl_hours)).timestamp())
+            
+            logger.info(f"🔄 Performing DynamoDB update:")
+            logger.info(f"   - REPLACE report_type with: '{new_intent}'")
+            logger.info(f"   - REPLACE slots with: {new_slots}")
+            logger.info(f"   - APPEND prompt to history")
+            logger.info(f"   - REFRESH TTL to: {new_ttl}")
+            
+            # Update: REPLACE intent and slots, append prompt, refresh TTL
+            # Note: 'ttl' is a reserved keyword in DynamoDB, so we use ExpressionAttributeNames
             response = self.table.update_item(
                 Key={
                     'user_id': user_id,
                     'timestamp': timestamp
                 },
-                UpdateExpression='SET prompts = list_append(if_not_exists(prompts, :empty_list), :new_prompt), '
+                UpdateExpression='SET report_type = :intent, '
                                 'slots = :slots, '
-                                'updated_at = :updated_at',
+                                'prompts = list_append(if_not_exists(prompts, :empty_list), :new_prompt), '
+                                'updated_at = :updated_at, '
+                                '#ttl = :ttl',
+                ExpressionAttributeNames={
+                    '#ttl': 'ttl'  # Handle reserved keyword
+                },
                 ExpressionAttributeValues={
+                    ':intent': new_intent,  # REPLACE intent
+                    ':slots': new_slots,     # REPLACE slots
                     ':empty_list': [],
                     ':new_prompt': [new_prompt_entry],
-                    ':slots': new_slots,
-                    ':updated_at': datetime.now().isoformat()
+                    ':updated_at': datetime.now().isoformat(),
+                    ':ttl': new_ttl
                 },
                 ReturnValues='UPDATED_NEW'
             )
             
-            logger.info(f"Appended prompt to existing record for user {user_id}")
+            logger.info(f"✅ DynamoDB update successful!")
+            logger.info(f"   - Updated attributes: {response.get('Attributes', {})}")
+            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
             return True
             
         except ClientError as e:
-            logger.error(f"Failed to append prompt for user {user_id}: {e}")
+            logger.error(f"❌ Failed to update record for user {user_id}: {e}")
+            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
             return False
         except Exception as e:
-            logger.exception(f"Unexpected error appending prompt: {e}")
+            logger.exception(f"❌ Unexpected error updating record: {e}")
+            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
             return False
+    
+    def get_pending_intent(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve the most recent pending intent for a user.
+        
+        This method checks if previous context exists and is still fresh (within TTL).
+        If TTL has expired, returns None even if DynamoDB hasn't deleted the record yet.
+        
+        Args:
+            user_id: The user's ID
+            
+        Returns:
+            Dict with report_type, slots, updated_at, and timestamp, or None if not found/expired
+        """
+        try:
+            response = self.table.query(
+                KeyConditionExpression='user_id = :uid',
+                ExpressionAttributeValues={':uid': user_id},
+                ScanIndexForward=False,  # Sort descending by timestamp
+                Limit=1
+            )
+            
+            items = response.get('Items', [])
+            
+            if items:
+                item = items[0]
+                
+                # Manual TTL validation: Check if record is still fresh
+                ttl_timestamp = item.get('ttl')
+                current_time = int(time.time())
+                
+                if ttl_timestamp and current_time >= ttl_timestamp:
+                    # TTL has expired, treat as if record doesn't exist
+                    logger.info(
+                        f"⏰ Pending intent found for user {user_id} but TTL expired: "
+                        f"ttl={ttl_timestamp}, now={current_time}, expired_by={current_time - ttl_timestamp}s"
+                    )
+                    return None
+                
+                logger.info(
+                    f"✅ Found pending intent for user {user_id}: report_type={item.get('report_type')}, "
+                    f"updated_at={item.get('updated_at')}, ttl_remaining={ttl_timestamp - current_time}s"
+                )
+                return {
+                    'report_type': item.get('report_type'),
+                    'slots': item.get('slots', {}),
+                    'updated_at': item.get('updated_at'),
+                    'timestamp': item.get('timestamp')
+                }
+            
+            logger.info(f"⏰ No pending intent found for user {user_id} (expired or never existed)")
+            return None
+            
+        except ClientError as e:
+            logger.error(f"Failed to retrieve pending intent for user {user_id}: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error retrieving pending intent: {e}")
+            return None
     
     def get_latest_intent(self, user_id: str) -> Optional[Dict[str, Any]]:
         """

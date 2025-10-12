@@ -120,22 +120,32 @@ Output: {
 
 Input: "customer.csv"
 Output: {
-  "intent": "general_query",
+  "intent": "",
   "slots": {"file_name": "customer.csv"},
-  "confidence": 0.7,
-  "missing_required": ["intent (what type of analysis?)"],
+  "confidence": 0.8,
+  "missing_required": ["intent"],
   "is_complete": false,
-  "clarification_needed": "I found the file 'customer.csv'. What would you like to analyze? (e.g., success rate, failure rate)"
+  "clarification_needed": null
+}
+
+Input: "customer domain"
+Output: {
+  "intent": "",
+  "slots": {"domain_name": "customer"},
+  "confidence": 0.8,
+  "missing_required": ["intent"],
+  "is_complete": false,
+  "clarification_needed": null
 }
 
 Input: "generate a report"
 Output: {
-  "intent": "general_query",
+  "intent": "",
   "slots": {},
   "confidence": 0.5,
   "missing_required": ["intent", "domain_name or file_name"],
   "is_complete": false,
-  "clarification_needed": "I can generate several types of reports. Please specify: 1) What type of report? (success rate, failure rate) 2) Which file or domain to analyze?"
+  "clarification_needed": null
 }
 
 Input: "hello"
