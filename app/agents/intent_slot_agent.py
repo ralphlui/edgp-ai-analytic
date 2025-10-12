@@ -138,14 +138,14 @@ Output: {
   "clarification_needed": null
 }
 
-Input: "generate a report"
+Input: "generate a report or give me analytics report"
 Output: {
-  "intent": "",
+  "intent": "general_query",
   "slots": {},
-  "confidence": 0.5,
-  "missing_required": ["intent", "domain_name or file_name"],
+  "confidence": 0.6,
+  "missing_required": ["report_type", "target"],
   "is_complete": false,
-  "clarification_needed": null
+  "clarification_needed": "I can help you generate analytics reports! Please specify:\n1. What type of analysis? (success rate or failure rate)\n2. Which file or domain to analyze? (e.g., 'customer.csv' or 'customer domain')"
 }
 
 Input: "hello"

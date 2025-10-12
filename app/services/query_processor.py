@@ -104,6 +104,14 @@ class QueryProcessor:
             
             logger.info(f"🎯 Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
             
+             # Handle out-of-scope queries (non-analytics questions)
+            if result.clarification_needed is not None:
+                logger.info(f"📢 Out-of-scope query detected: '{request.prompt}'")
+                return {
+                    "success": False,
+                    "message": result.clarification_needed or "I'm specialized in analytics. Please ask about success rates, failure rates, or data analysis.",
+                    "chart_image": None,
+                }
             # Smart Inheritance Logic: Try to inherit missing fields from previous context
             # This enables natural multi-turn conversations
             pending_service = get_pending_intent_service()
@@ -246,14 +254,6 @@ class QueryProcessor:
                 else:
                     logger.info(f"⏰ No previous context found (expired or never existed)")
             
-            # Handle out-of-scope queries (non-analytics questions)
-            if result.clarification_needed is not None:
-                logger.info(f"📢 Out-of-scope query detected: '{request.prompt}'")
-                return {
-                    "success": False,
-                    "message": result.clarification_needed or "I'm specialized in analytics. Please ask about success rates, failure rates, or data analysis.",
-                    "chart_image": None,
-                }
             
             # Save to DynamoDB if conditions are met
             # Note: Check AFTER inheritance to save merged values
@@ -353,13 +353,41 @@ class QueryProcessor:
                     "chart_image": None,
                 }
             
-            # TODO: Route to appropriate service based on intent
-            # For now, return the extracted information
-            return {
-                "success": True,
-                "message": f"Intent detected: {result.intent}, Slots: {result.slots}",
-                "chart_image": None,
-            }
+            # Call analytics workflow - LLM will decide which tool to use
+            logger.info(f"🚀 Calling analytics workflow with LLM-based tool selection")
+            
+            from app.workflows.analytics_workflow import run_analytics_query
+            
+            try:
+                # Build extracted data for workflow
+                # Note: We only pass domain_name and file_name
+                # The LLM will analyze user_query to decide which tool to call
+                extracted_data = {
+                    "domain_name": result.slots.get("domain_name"),
+                    "file_name": result.slots.get("file_name")
+                }
+                
+                logger.info(f"📊 Workflow input - Query: '{request.prompt}'")
+                logger.info(f"📊 Workflow input - Data: {extracted_data}")
+                
+                # Run workflow - LLM decides between success_rate and failure_rate tools
+                response = await run_analytics_query(
+                    user_query=request.prompt,
+                    extracted_data=extracted_data
+                )
+                
+                logger.info(f"✅ Workflow completed successfully")
+                logger.info(f"📈 Response - Success: {response.get('success')}, Has chart: {response.get('chart_image') is not None}")
+                
+                return response
+                
+            except Exception as e:
+                logger.exception(f"❌ Analytics workflow execution failed: {e}")
+                return {
+                    "success": False,
+                    "message": f"I encountered an error while processing your analytics request: {str(e)}",
+                    "chart_image": None
+                }
           
 
 

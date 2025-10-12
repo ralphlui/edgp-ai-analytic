@@ -33,6 +33,12 @@ from .session_manager import (
     cleanup_expired_sessions,
 )
 
+from .analytics_tools import (
+    generate_success_rate_report,
+    generate_failure_rate_report,
+    get_analytics_tools
+)
+
 __all__ = [
     # Rate analysis tools
     "get_file_analysis_rates_tool",
@@ -49,6 +55,11 @@ __all__ = [
     "unbind_session",
     "get_session_context",
     "cleanup_expired_sessions",
+    
+    # New analytics tools
+    "generate_success_rate_report",
+    "generate_failure_rate_report",
+    "get_analytics_tools",
 ]
 
 # Tool registry for easy access
@@ -59,4 +70,10 @@ ANALYSIS_TOOLS = [
     get_data_quality_validation_rates_tool,
     get_domain_analytics_by_field_tool,
     #analyze_query_for_domain_analytics_tool
+]
+
+# New analytics tools (success/failure rate)
+ANALYTICS_TOOLS = [
+    generate_success_rate_report,
+    generate_failure_rate_report
 ]
