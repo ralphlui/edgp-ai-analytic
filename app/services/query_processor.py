@@ -114,14 +114,102 @@ class QueryProcessor:
             has_file = result.slots.get('file_name') and result.slots.get('file_name') != ''
             has_target = has_domain or has_file
             
+            # Retrieve previous data first (for conflict detection and inheritance)
+            previous_data = pending_service.get_pending_intent(user_id)
+            
+            # CONFLICT DETECTION: Check if user is switching target types
+            if previous_data and has_target:
+                prev_domain = previous_data.get('slots', {}).get('domain_name')
+                prev_file = previous_data.get('slots', {}).get('file_name')
+                
+                # Detect target type conflict (switching from domain to file or vice versa)
+                if (has_domain and prev_file) or (has_file and prev_domain):
+                    prev_target = f"domain '{prev_domain}'" if prev_domain else f"file '{prev_file}'"
+                    curr_target = f"domain '{result.slots['domain_name']}'" if has_domain else f"file '{result.slots['file_name']}'"
+                    
+                    logger.warning(f"⚠️ Target conflict detected: {prev_target} vs {curr_target}")
+                    
+                    # Save the new extraction temporarily with a special marker
+                    # This allows us to retrieve it when user confirms
+                    pending_service.save_intent_and_slots(
+                        user_id=user_id,
+                        intent=result.intent,
+                        slots={**result.slots, '_conflict_pending': True},  # Add marker
+                        original_prompt=f"[CONFLICT] {request.prompt}"
+                    )
+                    
+                    logger.info(f"💾 Saved conflicting target temporarily with _conflict_pending marker")
+                    
+                    # Ask user to choose
+                    return {
+                        "success": False,
+                        "message": (
+                            f"⚠️ **Target Conflict Detected**\n\n"
+                            f"I see you mentioned:\n"
+                            f"• **Previously**: {prev_target}\n"
+                            f"• **Just now**: {curr_target}\n\n"
+                            f"Which target should I use?\n"
+                            f"1️⃣  {curr_target} (new target)\n"
+                            f"2️⃣  {prev_target} (previous target)\n\n"
+                            f"💡 **Quick responses**:\n"
+                            f"   • Type '1' or 'use file' for option 1\n"
+                            f"   • Type '2' or 'use domain' for option 2\n"
+                            f"   • Or just tell me what to analyze next!"
+                        ),
+                        "chart_image": None,
+                    }
+            
+            # CONFLICT RESOLUTION: Check if user is responding to a conflict
+            if previous_data and previous_data.get('slots', {}).get('_conflict_pending'):
+                logger.info("🔍 Detected conflict resolution attempt")
+                
+                # Remove the conflict marker for comparison
+                prev_slots = {k: v for k, v in previous_data.get('slots', {}).items() if k != '_conflict_pending'}
+                prev_domain = prev_slots.get('domain_name')
+                prev_file = prev_slots.get('file_name')
+                
+                # Check if user is confirming their choice
+                confirmation_keywords = {
+                    'use_current': ['1', 'use file', 'use current', 'new one', 'use csv', 'file'],
+                    'use_previous': ['2', 'use domain', 'use previous', 'keep it', 'domain', 'keep'],
+                }
+                
+                prompt_lower = request.prompt.lower()
+                
+                # Check which option user chose
+                for action, keywords in confirmation_keywords.items():
+                    if any(keyword in prompt_lower for keyword in keywords):
+                        if action == 'use_current':
+                            # User chose the new target (the one with conflict marker)
+                            logger.info(f"✅ User confirmed: use new target from previous prompt")
+                            # Clean up the marker and continue
+                            result.slots = prev_slots
+                            # Don't inherit anything else - use what's in conflict
+                            break
+                        elif action == 'use_previous':
+                            # User chose to go back to the target before the conflict
+                            logger.info(f"✅ User confirmed: revert to target before conflict")
+                            
+                            # Need to retrieve the record before the conflict
+                            # For now, clear the conflict and ask user to re-specify
+                            pending_service.clear_intent(user_id)
+                            
+                            return {
+                                "success": False,
+                                "message": (
+                                    f"✅ Cleared the conflicting target.\n\n"
+                                    f"Please specify what you'd like to analyze again.\n"
+                                    f"For example: 'success rate for customer domain'"
+                                ),
+                                "chart_image": None,
+                            }
+            
             # If missing report_type OR target, try to inherit from previous context
             if not has_report_type or not has_target:
                 logger.info(f"🔍 Missing fields detected - Checking for previous context to inherit...")
                 logger.info(f"   has_report_type: {has_report_type}, has_target: {has_target}")
                 
-                # Retrieve previous data (only exists if within TTL window)
-                previous_data = pending_service.get_pending_intent(user_id)
-                
+                # Use previous_data already retrieved above (for conflict detection)
                 if previous_data:
                     logger.info(f"✅ Found previous context: {previous_data}")
                     
