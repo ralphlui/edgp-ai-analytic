@@ -87,7 +87,8 @@ def generate_success_rate_report(
                 "total_requests": data["total_requests"],
                 "successful_requests": data["successful_requests"],
                 "failed_requests": data["failed_requests"],
-                "success_rate": data["success_rate"]
+                "success_rate": data["success_rate"],
+                "report_type": "success_rate"  # Report type for chart generation
             }
         }
         
@@ -174,7 +175,8 @@ def generate_failure_rate_report(
                 "total_requests": data["total_requests"],
                 "successful_requests": data["successful_requests"],
                 "failed_requests": data["failed_requests"],
-                "failure_rate": data["failure_rate"]
+                "failure_rate": data["failure_rate"],
+                "report_type": "failure_rate"  # Report type for chart generation
             }
         }
         

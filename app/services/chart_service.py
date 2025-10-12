@@ -33,7 +33,7 @@ class AnalyticsChartGenerator:
     def generate_success_failure_bar_chart(
         self,
         data: dict,
-        chart_type: str = "success_rate"
+        chart_type: str
     ) -> Optional[str]:
         """
         Generate a bar chart showing success vs failure counts.
@@ -92,10 +92,25 @@ class AnalyticsChartGenerator:
             # Create figure and axis
             fig, ax = plt.subplots(figsize=self.figure_size, dpi=self.dpi)
             
-            # Data for chart
-            categories = ['Successful', 'Failed']
-            values = [successful_requests, failed_requests]
-            colors = [self.color_success, self.color_failure]
+            # Filter chart data based on chart_type
+            if chart_type == "success_rate":
+                # Show only successful requests
+                categories = ['Successful']
+                values = [successful_requests]
+                colors = [self.color_success]
+                logger.info(f"✅ Showing success-only chart: {successful_requests} successful requests")
+            elif chart_type == "failure_rate":
+                # Show only failed requests
+                categories = ['Failed']
+                values = [failed_requests]
+                colors = [self.color_failure]
+                logger.info(f"❌ Showing failure-only chart: {failed_requests} failed requests")
+            else:
+                # Show both (default)
+                categories = ['Successful', 'Failed']
+                values = [successful_requests, failed_requests]
+                colors = [self.color_success, self.color_failure]
+                logger.info(f"📊 Showing combined chart: {successful_requests} success + {failed_requests} failed")
             
             # Create vertical bar chart
             bars = ax.bar(categories, values, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)

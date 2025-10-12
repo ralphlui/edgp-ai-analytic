@@ -11,14 +11,9 @@ from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
 
-from app.core.analytic_service import AnalyticService
-from app.services.memory import dynamo_conversation
 from app.auth import validate_user_profile_with_response
-from app.utils.sanitization import sanitize_text_input
-from app.config import SESSION_COOKIE_MAX_AGE_HOURS
 
 # Constants
-SESSION_COOKIE_MAX_AGE = SESSION_COOKIE_MAX_AGE_HOURS * 3600  # Convert hours to seconds (unused after session removal)
 SESSION_ID_PREFIX_LENGTH = 8  # For log truncation when needed
 
 logger = logging.getLogger("analytic_agent")
@@ -60,10 +55,6 @@ class QueryProcessor:
     Simplified processor that focuses on security and delegates
     reference resolution to memory service and LLM.
     """
-
-    def __init__(self):
-        # Stateless; conversation history is stored in DynamoDB by user_id.
-        self._analytic_service = AnalyticService()
 
     async def query_handler(
         self,
@@ -403,7 +394,6 @@ class QueryProcessor:
 
         except Exception as error:
             logger.exception(f"Query processing failed: {error}")
-            safe_prompt = sanitize_text_input(request.prompt, max_length=1000)
             return self._create_error_response("Processing failed", str(error))
 
     
