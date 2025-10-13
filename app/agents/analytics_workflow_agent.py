@@ -1,13 +1,18 @@
 """
-LangGraph workflow for analytics using Pattern B approach.
+Analytics Orchestrator - Coordinates analytics query execution using Pattern B.
 
 Pattern B: Tools return raw data, LLM generates natural language responses.
 
-This pattern provides:
+This orchestrator coordinates:
+- Tool execution (analytics data retrieval)
+- Chart generation (visualization)
+- LLM response formatting (natural language)
+
+Benefits:
 - Better conversational flow with context-aware responses
 - Flexibility for multi-turn conversations
 - Natural language adaptation to user's query style
-- Easier maintenance (tools focus on data retrieval only)
+- Easier maintenance (clear separation of concerns)
 """
 import logging
 from typing import TypedDict, Literal
@@ -334,11 +339,11 @@ Return ONLY the message text, not JSON. I will wrap it in the response structure
     return {"final_response": structured_response}
 
 
-def build_analytics_workflow() -> StateGraph:
+def build_analytics_orchestrator() -> StateGraph:
     """
-    Build the LangGraph workflow for Pattern B analytics with chart generation.
+    Build the analytics orchestrator for Pattern B with chart generation.
     
-    Workflow:
+    Orchestration Flow:
     1. execute_analytics_tool - Calls tool, gets raw data
     2. generate_chart_node - Creates chart visualization from data
     3. format_response_with_llm - LLM formats message, wraps in JSON with chart
@@ -363,12 +368,14 @@ def build_analytics_workflow() -> StateGraph:
 # Example usage
 async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     """
-    Run analytics query through Pattern B workflow with LLM-based tool selection.
+    Run analytics query through orchestrator with LLM-based tool selection.
     
-    The LLM will:
+    The orchestrator will:
     1. Analyze the user's natural language query
     2. Decide which analytics tool to call (success_rate or failure_rate)
     3. Format the tool arguments correctly from extracted_data
+    4. Generate chart visualization
+    5. Format natural language response
     
     Args:
         user_query: Original user question (e.g., "Show me success rate for customer domain")
@@ -394,7 +401,7 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
         ...     extracted_data={"domain_name": None, "file_name": "data.csv"}
         ... )
     """
-    workflow = build_analytics_workflow()
+    orchestrator = build_analytics_orchestrator()
     
     initial_state = {
         "user_query": user_query,
@@ -404,13 +411,13 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
         "final_response": {}
     }
     
-    logger.info(f"🚀 Starting LLM-powered workflow for: {user_query}")
+    logger.info(f"🚀 Starting orchestrator for: {user_query}")
     logger.info(f"📊 Extracted parameters: {extracted_data}")
     
-    # Run workflow - LLM will select appropriate tool
-    final_state = await workflow.ainvoke(initial_state)
+    # Run orchestrator - LLM will select appropriate tool
+    final_state = await orchestrator.ainvoke(initial_state)
     
-    logger.info(f"✅ Workflow complete")
+    logger.info(f"✅ Orchestrator complete")
     
     return final_state["final_response"]
 
@@ -422,7 +429,7 @@ if __name__ == "__main__":
     # Test case 1: Success rate query - LLM decides the tool
     async def test_success_rate():
         print("\n" + "="*60)
-        print("TEST 1: Success Rate Query (LLM decides tool)")
+        print("TEST 1: Success Rate Query (Orchestrator)")
         print("="*60)
         
         response = await run_analytics_query(

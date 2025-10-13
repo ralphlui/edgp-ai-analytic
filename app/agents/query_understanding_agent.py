@@ -1,9 +1,10 @@
 """
-Intent and Slot Detection Agent for Analytics Queries.
+Query Understanding Agent for Analytics Queries.
 
-This agent uses LLM to extract:
-- Intent: What type of analysis the user wants (success_rate, failure_rate, domain_distribution, etc.)
-- Slots: What entities to analyze (domain_name, file_name, chart_type, date_range, etc.)
+This agent uses LLM to understand and extract:
+- Intent: What type of analysis the user wants (success_rate, failure_rate, etc.)
+- Entities: What entities to analyze (domain_name, file_name, etc.)
+- Completeness: Whether the query has all required information
 """
 import json
 import logging
@@ -16,8 +17,8 @@ from app.config import OPENAI_API_KEY, OPENAI_MODEL
 logger = logging.getLogger(__name__)
 
 
-class IntentSlotResult(BaseModel):
-    """Structured result from intent and slot detection."""
+class QueryUnderstandingResult(BaseModel):
+    """Structured result from query understanding."""
     intent: Optional[str] = Field(None, description="Detected user intent (success_rate, failure_rate, both_rate, domain_distribution, etc.)")
     slots: Dict[str, Any] = Field(default_factory=dict, description="Extracted slot values")
     confidence: float = Field(0.0, description="Confidence score (0.0 to 1.0)")
@@ -26,20 +27,20 @@ class IntentSlotResult(BaseModel):
     clarification_needed: Optional[str] = Field(None, description="What to ask user if incomplete")
 
 
-class IntentSlotAgent:
+class QueryUnderstandingAgent:
     """
-    Agent for extracting intent and slots from user queries.
+    Agent for understanding user queries and extracting intent and entities.
     
     Intents:
     - success_rate: Analyze success rates
     - failure_rate: Analyze failure rates
     
-    Slots:
+    Entities (Slots):
     - domain_name: Name of the domain to analyze
     - file_name: Name of the file to analyze
     """
     
-    SYSTEM_PROMPT = """You are an expert intent and slot detection agent for an analytics system.
+    SYSTEM_PROMPT = """You are an expert query understanding agent for an analytics system.
 
 Your task is to extract:
 1. **INTENT** - What type of analysis does the user want?
@@ -179,18 +180,18 @@ Output: {
 }
 
 🎯 **YOUR RESPONSE FORMAT:**
-Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
+Return ONLY valid JSON matching the QueryUnderstandingResult schema. No additional text.
 """
 
     def __init__(self):
-        """Initialize the intent and slot detection agent."""
+        """Initialize the query understanding agent."""
         self.llm = ChatOpenAI(
             model=OPENAI_MODEL,
             temperature=0.0,  # Deterministic for consistent extraction
             api_key=OPENAI_API_KEY
         )
     
-    async def extract_intent_and_slots(self, user_query: str) -> IntentSlotResult:
+    async def extract_intent_and_slots(self, user_query: str) -> QueryUnderstandingResult:
         """
         Extract intent and slots from user query.
         
@@ -198,7 +199,7 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
             user_query: The user's natural language query
             
         Returns:
-            IntentSlotResult with extracted intent, slots, and completeness info
+            QueryUnderstandingResult with extracted intent, slots, and completeness info
         """
         try:
             messages = [
@@ -206,7 +207,7 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
                 HumanMessage(content=f"Extract intent and slots from this query:\n\n{user_query}")
             ]
             
-            logger.info(f"Extracting intent and slots for query: '{user_query[:100]}...'")
+            logger.info(f"Understanding query: '{user_query[:100]}...'")
             
             response = await self.llm.ainvoke(messages)
             response_text = response.content.strip()
@@ -214,7 +215,7 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
             # Parse JSON response
             try:
                 result_dict = json.loads(response_text)
-                result = IntentSlotResult(**result_dict)
+                result = QueryUnderstandingResult(**result_dict)
                 
                 logger.info(f"Extracted intent: {result.intent}, slots: {result.slots}, complete: {result.is_complete}")
                 
@@ -225,7 +226,7 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
                 logger.warning(f"Raw response: {response_text}")
                 
                 # Fallback: return incomplete result
-                return IntentSlotResult(
+                return QueryUnderstandingResult(
                     intent="general_query",
                     slots={},
                     confidence=0.0,
@@ -235,9 +236,9 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
                 )
                 
         except Exception as e:
-            logger.exception(f"Error in intent and slot extraction: {e}")
+            logger.exception(f"Error in query understanding: {e}")
             
-            return IntentSlotResult(
+            return QueryUnderstandingResult(
                 intent="general_query",
                 slots={},
                 confidence=0.0,
@@ -246,7 +247,7 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
                 clarification_needed="I encountered an error processing your request. Please try rephrasing your question."
             )
     
-    def validate_completeness(self, result: IntentSlotResult) -> IntentSlotResult:
+    def validate_completeness(self, result: QueryUnderstandingResult) -> QueryUnderstandingResult:
         """
         Validate if the extracted intent and slots are complete.
         Updates the result with missing required slots and clarification.
@@ -283,11 +284,11 @@ Return ONLY valid JSON matching the IntentSlotResult schema. No additional text.
 
 
 # Singleton instance
-_intent_slot_agent = None
+_query_understanding_agent = None
 
-def get_intent_slot_agent() -> IntentSlotAgent:
-    """Get the singleton intent and slot detection agent."""
-    global _intent_slot_agent
-    if _intent_slot_agent is None:
-        _intent_slot_agent = IntentSlotAgent()
-    return _intent_slot_agent
+def get_query_understanding_agent() -> QueryUnderstandingAgent:
+    """Get the singleton query understanding agent."""
+    global _query_understanding_agent
+    if _query_understanding_agent is None:
+        _query_understanding_agent = QueryUnderstandingAgent()
+    return _query_understanding_agent

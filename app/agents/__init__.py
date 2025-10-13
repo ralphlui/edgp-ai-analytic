@@ -1,10 +1,10 @@
 """
 Agents module for specialized AI agents.
 """
-from .intent_slot_agent import IntentSlotAgent, get_intent_slot_agent, IntentSlotResult
+from .query_understanding_agent import QueryUnderstandingAgent, get_query_understanding_agent, QueryUnderstandingResult
 
 __all__ = [
-    "IntentSlotAgent",
-    "get_intent_slot_agent",
-    "IntentSlotResult"
+    "QueryUnderstandingAgent",
+    "get_query_understanding_agent",
+    "QueryUnderstandingResult"
 ]

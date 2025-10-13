@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Dict, Any
 
-from app.agents.intent_slot_agent import get_intent_slot_agent
+from app.agents.query_understanding_agent import get_query_understanding_agent
 from app.services.pending_intent_service import get_pending_intent_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
 from fastapi import Request, Response, HTTPException
@@ -81,7 +81,7 @@ class QueryProcessor:
             
             # Extract intent and slots
             logger.info(f"🤖 Extracting intent and slots from prompt: '{request.prompt}'")
-            agent = get_intent_slot_agent()
+            agent = get_query_understanding_agent()
             result = await agent.extract_intent_and_slots(request.prompt)
             result = agent.validate_completeness(result)
             
@@ -323,9 +323,9 @@ class QueryProcessor:
                         f"⚠️ Missing Target: I understand you want {analysis_type} analysis, "
                         f"but I need to know what to analyze.\n\n"
                         f"Please specify:\n"
-                        f"- A domain name (e.g., 'example.com')\n"
-                        f"- OR a file name (e.g., 'test.py')\n\n"
-                        f"Example: 'Show me the {analysis_type} for example.com'"
+                        f"- A domain name (e.g., 'customer domain')\n"
+                        f"- OR a file name (e.g., 'customer.csv')\n\n"
+                        f"Example: 'Show me the {analysis_type} for customer domain'"
                     )
                     missing_fields = ["target"]
                     
@@ -336,10 +336,10 @@ class QueryProcessor:
                     "chart_image": None,
                 }
             
-            # Call analytics workflow - LLM will decide which tool to use
-            logger.info(f"🚀 Calling analytics workflow with LLM-based tool selection")
+            # Call analytics orchestrator - coordinates tool execution, chart generation, and response
+            logger.info(f"🚀 Calling analytics orchestrator")
             
-            from app.workflows.analytics_workflow import run_analytics_query
+            from app.agents.analytics_workflow_agent import run_analytics_query
             
             try:
                 # Build extracted data for workflow
