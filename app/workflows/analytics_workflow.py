@@ -13,6 +13,7 @@ import logging
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
+from app.config import OPENAI_API_KEY, OPENAI_MODEL
 
 from app.tools.analytics_tools import (
     generate_success_rate_report,
@@ -55,7 +56,7 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     tools = get_analytics_tools()
     
     # Create LLM with tool calling capability
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
     llm_with_tools = llm.bind_tools(tools)
     
     # Comprehensive system prompt explaining the task
@@ -317,7 +318,7 @@ Return ONLY the message text, not JSON. I will wrap it in the response structure
     logger.info("🤖 Generating LLM-formatted message...")
     
     # Use LLM to generate natural response
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, api_key=OPENAI_API_KEY)
     response = llm.invoke(prompt)
     
     message_text = response.content
