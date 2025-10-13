@@ -79,14 +79,14 @@ class PromptSecurityValidator:
         (r'system\s*(instruction|prompt|rule)', 'system instruction leak'),
         (r'(internal|private)\s*(function|method|tool)', 'internal detail leak'),
         
-        # Credentials and secrets
-        (r'(jwt|token|secret|key|credential)', 'credential leak'),
-        (r'aws_(region|access|secret)', 'AWS config leak'),
-        (r'(api_key|access_key|secret_key)', 'API key leak'),
+        # Credentials and secrets - more specific patterns to avoid false positives
+        (r'(jwt_|bearer_token|auth_token|session_token)', 'token leak'),
+        (r'(aws_secret|secret_key|private_key|api_secret)', 'secret leak'),
+        (r'(api_key\s*[:=]|access_key\s*[:=])', 'API key value leak'),
         
         # Configuration details
         (r'(environment|config)\s*(variable|setting)', 'config leak'),
-        (r'\.env|ENV_', 'environment variable leak'),
+        (r'\.env\s*(file|variable)|ENV_\w+\s*=', 'environment variable leak'),
     ]
     
     @staticmethod
