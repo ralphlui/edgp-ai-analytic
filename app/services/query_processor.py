@@ -7,6 +7,7 @@ from typing import Dict, Any
 
 from app.agents.intent_slot_agent import get_intent_slot_agent
 from app.services.pending_intent_service import get_pending_intent_service
+from app.security.prompt_validator import validate_user_prompt, validate_llm_output
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
@@ -26,26 +27,17 @@ class PromptRequest(BaseModel):
     @field_validator('prompt')
     @classmethod
     def validate_prompt(cls, v):
-        """Validate prompt input for basic security checks."""
+        """Enhanced prompt validation using advanced security validator."""
         if not v or not v.strip():
             raise ValueError('Prompt cannot be empty')
 
         if len(v) > 5000:
             raise ValueError('Prompt too long (max 5000 characters)')
 
-        # Check for obviously malicious patterns (before full sanitization)
-        dangerous_indicators = [
-            'system:', 'assistant:', 'user:', 'human:', 'ai:',
-            'ignore previous', 'forget previous', 'disregard',
-            'you are now', 'your role is', 'act as', 'pretend to be',
-            'execute:', 'run:', 'rm -rf', '\n\n', '%0A%0A',
-            '[inst]', '[/inst]', '<|', '|>', '{{', '}}'
-        ]
-
-        v_lower = v.lower()
-        for indicator in dangerous_indicators:
-            if indicator in v_lower:
-                raise ValueError(f'Potentially malicious content detected: {indicator}')
+        # Use advanced regex-based security validation
+        is_safe, error_msg = validate_user_prompt(v)
+        if not is_safe:
+            raise ValueError(error_msg)
 
         return v
 
@@ -369,6 +361,17 @@ class QueryProcessor:
                 
                 logger.info(f"✅ Workflow completed successfully")
                 logger.info(f"📈 Response - Success: {response.get('success')}, Has chart: {response.get('chart_image') is not None}")
+                
+                # OUTPUT VALIDATION: Check for information leaks before returning
+                is_safe_output, leak_error = validate_llm_output(response)
+                if not is_safe_output:
+                    logger.error(f"🚨 Blocked unsafe output for user {user_id}")
+                    logger.error(f"   Leak detected: {leak_error}")
+                    return {
+                        "success": False,
+                        "message": "I apologize, but I cannot provide that information. Please ask about analytics data only.",
+                        "chart_image": None
+                    }
                 
                 return response
                 
