@@ -12,7 +12,7 @@ from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
 
-from app.auth import validate_user_profile_with_response
+from app.security.auth import validate_user_profile_with_response
 
 # Constants
 SESSION_ID_PREFIX_LENGTH = 8  # For log truncation when needed

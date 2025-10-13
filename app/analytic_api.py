@@ -11,7 +11,7 @@ from fastapi import FastAPI, Depends, Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
-from app.auth import bearer_scheme, validate_jwt_token
+from app.security.auth import bearer_scheme, validate_jwt_token
 from app.services.query_processor import QueryProcessor, PromptRequest
 from app.services.audit_sqs_service import get_audit_sqs_service
 

@@ -36,10 +36,10 @@ class TestJWTValidation:
             "exp": 9999999999  # Far future
         }
     
-    @patch('app.auth.jwt.decode')
+    @patch('app.security.auth.jwt.decode')
     def test_valid_jwt_token(self, mock_decode, mock_credentials, sample_jwt_payload):
         """Test validation of a valid JWT token."""
-        from app.auth import validate_jwt_token
+        from app.security.auth import validate_jwt_token
         
         mock_decode.return_value = sample_jwt_payload
         
@@ -49,10 +49,10 @@ class TestJWTValidation:
         assert result["sub"] == "user-123-456"
         assert result["email"] == "test@example.com"
     
-    @patch('app.auth.jwt.decode')
+    @patch('app.security.auth.jwt.decode')
     def test_expired_jwt_token(self, mock_decode, mock_credentials):
         """Test handling of expired JWT token."""
-        from app.auth import validate_jwt_token
+        from app.security.auth import validate_jwt_token
         from jose import JWTError
         
         mock_decode.side_effect = JWTError("Token expired")
@@ -63,10 +63,10 @@ class TestJWTValidation:
         assert exc_info.value.status_code == 401
         assert "Invalid or expired token" in str(exc_info.value.detail)
     
-    @patch('app.auth.jwt.decode')
+    @patch('app.security.auth.jwt.decode')
     def test_invalid_jwt_token(self, mock_decode, mock_credentials):
         """Test handling of invalid JWT token."""
-        from app.auth import validate_jwt_token
+        from app.security.auth import validate_jwt_token
         from jose import JWTError
         
         mock_decode.side_effect = JWTError("Invalid token")
@@ -76,10 +76,10 @@ class TestJWTValidation:
         
         assert exc_info.value.status_code == 401
     
-    @patch('app.auth.jwt.decode')
+    @patch('app.security.auth.jwt.decode')
     def test_jwt_missing_required_claims(self, mock_decode, mock_credentials):
         """Test JWT token missing required claims."""
-        from app.auth import validate_jwt_token
+        from app.security.auth import validate_jwt_token
         
         # Payload without 'sub' claim
         incomplete_payload = {
@@ -113,7 +113,7 @@ class TestUserProfileValidation:
         }
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_active_user_validation(
         self,
@@ -123,7 +123,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test validation of active user profile."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         # Mock JWT validation
         mock_validate_jwt.return_value = sample_jwt_payload
@@ -152,7 +152,7 @@ class TestUserProfileValidation:
         assert result["payload"] == sample_jwt_payload
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_inactive_user_validation(
         self,
@@ -162,7 +162,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test validation of inactive user profile."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = sample_jwt_payload
         
@@ -187,7 +187,7 @@ class TestUserProfileValidation:
         assert "not active" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_user_not_found(
         self,
@@ -197,7 +197,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test validation when user not found in admin system."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = sample_jwt_payload
         
@@ -216,14 +216,14 @@ class TestUserProfileValidation:
         assert "not found" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     async def test_invalid_token_in_profile_validation(
         self,
         mock_validate_jwt,
         mock_credentials
     ):
         """Test profile validation with invalid JWT token."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         # Mock JWT validation failure
         mock_validate_jwt.side_effect = HTTPException(
@@ -237,7 +237,7 @@ class TestUserProfileValidation:
         assert "authentication failed" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_admin_api_timeout(
         self,
@@ -247,7 +247,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test handling of admin API timeout."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = sample_jwt_payload
         
@@ -262,7 +262,7 @@ class TestUserProfileValidation:
         assert "timeout" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_admin_api_connection_error(
         self,
@@ -272,7 +272,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test handling of admin API connection error."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = sample_jwt_payload
         
@@ -287,14 +287,14 @@ class TestUserProfileValidation:
         assert "connect" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     async def test_missing_user_id_in_jwt(
         self,
         mock_validate_jwt,
         mock_credentials
     ):
         """Test handling of JWT without user ID (sub claim)."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         # Mock JWT payload without 'sub' claim
         mock_validate_jwt.return_value = {
@@ -307,7 +307,7 @@ class TestUserProfileValidation:
         assert "missing user id" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_admin_api_500_error(
         self,
@@ -317,7 +317,7 @@ class TestUserProfileValidation:
         sample_jwt_payload
     ):
         """Test handling of admin API internal server error."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = sample_jwt_payload
         
@@ -348,7 +348,7 @@ class TestAuthorizationEdgeCases:
         )
     
     @pytest.mark.asyncio
-    @patch('app.auth.validate_jwt_token')
+    @patch('app.security.auth.validate_jwt_token')
     @patch('httpx.AsyncClient')
     async def test_unexpected_exception(
         self,
@@ -357,7 +357,7 @@ class TestAuthorizationEdgeCases:
         mock_credentials
     ):
         """Test handling of unexpected exceptions."""
-        from app.auth import validate_user_profile_with_response
+        from app.security.auth import validate_user_profile_with_response
         
         mock_validate_jwt.return_value = {"sub": "user-123"}
         
@@ -373,7 +373,7 @@ class TestAuthorizationEdgeCases:
     
     def test_empty_token(self):
         """Test handling of empty token."""
-        from app.auth import validate_jwt_token
+        from app.security.auth import validate_jwt_token
         from jose import JWTError
         
         credentials = HTTPAuthorizationCredentials(
@@ -381,7 +381,7 @@ class TestAuthorizationEdgeCases:
             credentials=""
         )
         
-        with patch('app.auth.jwt.decode', side_effect=JWTError("Invalid token")):
+        with patch('app.security.auth.jwt.decode', side_effect=JWTError("Invalid token")):
             with pytest.raises(HTTPException):
                 validate_jwt_token(credentials)
 
