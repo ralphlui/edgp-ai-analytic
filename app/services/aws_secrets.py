@@ -82,24 +82,24 @@ class SecretsManager:
                     pass
 
                 self._cache[secret_name] = secret_value
-                logger.info(f"Retrieved secret {secret_name} from AWS Secrets Manager")
+                logger.info(f"Retrieved secret from AWS Secrets Manager")
                 return secret_value
 
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
             if error_code == 'ResourceNotFoundException':
-                logger.warning(f"Secret {secret_name} not found in AWS Secrets Manager")
+                logger.warning(f"Secret not found in AWS Secrets Manager")
             elif error_code == 'AccessDeniedException':
-                logger.warning(f"Access denied for secret {secret_name} - insufficient permissions")
+                logger.warning(f"Access denied for secret - insufficient permissions")
                 # Mark as unavailable for future calls to avoid repeated attempts
                 self._available = False
             elif error_code in ['UnauthorizedOperation', 'InvalidUserID.NotFound', 'TokenRefreshRequired']:
-                logger.warning(f"AWS credentials issue for {secret_name}: {error_code}")
+                logger.warning(f"AWS credentials issue for secret: {error_code}")
                 self._available = False
             else:
-                logger.warning(f"AWS error retrieving secret {secret_name}: {e}")
+                logger.warning(f"AWS error retrieving secret: {e}")
         except Exception as e:
-            logger.warning(f"Unexpected error retrieving secret {secret_name}: {e}")
+            logger.warning(f"Unexpected error retrieving secret: {e}")
             # For network or other issues, don't mark as unavailable immediately
 
         logger.debug(f"Using fallback value for {secret_name}")
@@ -248,7 +248,7 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
                 for key_name in ['openai_api_key', 'OPENAI_API_KEY', 'openai_key', 'api_key']:
                     if key_name in secret_json:
                         openai_key = secret_json[key_name]
-                        logger.info(f"Extracted OpenAI API key from JSON secret (key: {key_name})")
+                        logger.info(f"Extracted OpenAI API key from JSON secret")
                         break
         except json.JSONDecodeError:
             # Not JSON, assume it's a plain API key string
