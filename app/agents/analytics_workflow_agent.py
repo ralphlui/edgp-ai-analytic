@@ -53,8 +53,8 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     domain_name = extracted_data.get("domain_name")
     file_name = extracted_data.get("file_name")
     
-    logger.info(f"🤖 LLM deciding which tool to call for: '{user_query}'")
-    logger.info(f"📊 Available parameters - domain: {domain_name}, file: {file_name}")
+    logger.info(f"LLM deciding which tool to call for: '{user_query}'")
+    logger.info(f"Available parameters - domain: {domain_name}, file: {file_name}")
     
     # Get analytics tools
     from app.tools.analytics_tools import get_analytics_tools
@@ -151,14 +151,14 @@ Select the appropriate analytics tool and call it with the correct parameters.""
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
             
-            logger.info(f"🎯 LLM selected tool: {tool_name}")
-            logger.info(f"📋 Tool arguments: {tool_args}")
+            logger.info(f"LLM selected tool: {tool_name}")
+            logger.info(f"Tool arguments: {tool_args}")
             
             # Execute the selected tool
             for tool in tools:
                 if tool.name == tool_name:
                     result = tool.invoke(tool_args)
-                    logger.info(f"✅ Tool execution complete: success={result.get('success')}")
+                    logger.info(f"Tool execution complete: success={result.get('success')}")
                     
                     # Store which tool was called for accurate chart filtering
                     if "data" in result and isinstance(result["data"], dict):
@@ -171,7 +171,7 @@ Select the appropriate analytics tool and call it with the correct parameters.""
                     return {"tool_result": result}
             
             # Tool not found (shouldn't happen)
-            logger.error(f"❌ Tool '{tool_name}' not found in available tools")
+            logger.error(f"Tool '{tool_name}' not found in available tools")
             return {
                 "tool_result": {
                     "success": False,
@@ -180,7 +180,7 @@ Select the appropriate analytics tool and call it with the correct parameters.""
             }
         else:
             # LLM didn't call any tool - this shouldn't happen with proper tools
-            logger.warning("⚠️ LLM did not call any tool")
+            logger.warning("LLM did not call any tool")
             logger.warning(f"LLM response: {response.content}")
             return {
                 "tool_result": {
@@ -190,7 +190,7 @@ Select the appropriate analytics tool and call it with the correct parameters.""
             }
             
     except Exception as e:
-        logger.exception(f"❌ Error in LLM tool selection: {e}")
+        logger.exception(f"Error in LLM tool selection: {e}")
         return {
             "tool_result": {
                 "success": False,
@@ -211,11 +211,11 @@ def generate_chart_node(state: AnalyticsState) -> dict:
     - "failure_rate": Show only failure data in chart
     """
     tool_result = state["tool_result"]
-    logger.info(f"🔧 Generating chart from tool result... {tool_result}")
+    logger.info(f"Generating chart from tool result... {tool_result}")
 
     # Skip chart if tool failed
     if not tool_result.get("success"):
-        logger.warning("⚠️ Skipping chart generation (tool failed)")
+        logger.warning("Skipping chart generation (tool failed)")
         return {"chart_image": None}
     
     # Get data and report type
@@ -224,17 +224,17 @@ def generate_chart_node(state: AnalyticsState) -> dict:
     # Determine report_type from the actual tool that was called (stored in data)
     # This is more reliable than using extracted_data which might be incorrect
     report_type = data.get("report_type")
-    logger.info(f"✅ Using report type from tool result: {report_type}")
+    logger.info(f"Using report type from tool result: {report_type}")
     
     
     # Skip chart if no data
     if data.get("total_requests", 0) == 0:
-        logger.warning("⚠️ Skipping chart generation (no data available)")
+        logger.warning("Skipping chart generation (no data available)")
         return {"chart_image": None}
     
     # Use complete data for charts - always show both success and failure
     # This ensures accurate visualization regardless of report type
-    logger.info(f"📊 Generating chart for report_type: {report_type}")
+    logger.info(f"Generating chart for report_type: {report_type}")
     
     # Use the full, unfiltered data
     filtered_data = data.copy()
@@ -245,7 +245,7 @@ def generate_chart_node(state: AnalyticsState) -> dict:
     # Generate chart with filtered data
     from app.services.chart_service import generate_analytics_chart
     
-    logger.info(f"📊 Generating {report_type} chart...")
+    logger.info(f"Generating {report_type} chart...")
     
     try:
         chart_base64 = generate_analytics_chart(
@@ -256,14 +256,14 @@ def generate_chart_node(state: AnalyticsState) -> dict:
         
         # Return just the base64 string (or None if generation failed)
         if chart_base64:
-            logger.info(f"✅ Chart generated successfully ({len(chart_base64)} bytes)")
+            logger.info(f"Chart generated successfully ({len(chart_base64)} bytes)")
         else:
-            logger.warning("⚠️ Chart generation returned None")
+            logger.warning("Chart generation returned None")
         
         return {"chart_image": chart_base64}
         
     except Exception as e:
-        logger.exception(f"❌ Chart generation error: {e}")
+        logger.exception(f"Chart generation error: {e}")
         return {"chart_image": None}
 
 
@@ -282,7 +282,7 @@ def format_response_with_llm(state: AnalyticsState) -> dict:
     # Handle tool errors
     if not tool_result.get("success"):
         error_msg = tool_result.get("error", "Unknown error occurred")
-        logger.error(f"❌ Tool error: {error_msg}")
+        logger.error(f"Tool error: {error_msg}")
         return {
             "final_response": {
                 "success": False,
@@ -320,14 +320,14 @@ If there are no requests (total_requests = 0), explain that no data is available
 Return ONLY the message text, not JSON. I will wrap it in the response structure.
 """
     
-    logger.info("🤖 Generating LLM-formatted message...")
+    logger.info("Generating LLM-formatted message...")
     
     # Use LLM to generate natural response
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, api_key=OPENAI_API_KEY)
     response = llm.invoke(prompt)
     
     message_text = response.content
-    logger.info(f"✅ LLM message generated ({len(message_text)} chars)")
+    logger.info(f"LLM message generated ({len(message_text)} chars)")
     
     # Build structured response
     structured_response = {
@@ -411,13 +411,13 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
         "final_response": {}
     }
     
-    logger.info(f"🚀 Starting orchestrator for: {user_query}")
-    logger.info(f"📊 Extracted parameters: {extracted_data}")
+    logger.info(f"Starting orchestrator for: {user_query}")
+    logger.info(f"Extracted parameters: {extracted_data}")
     
     # Run orchestrator - LLM will select appropriate tool
     final_state = await orchestrator.ainvoke(initial_state)
     
-    logger.info(f"✅ Orchestrator complete")
+    logger.info(f"Orchestrator complete")
     
     return final_state["final_response"]
 

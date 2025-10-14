@@ -79,7 +79,7 @@ async def validate_user_profile_with_response(credentials: HTTPAuthorizationCred
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"Validating user profile for user_id: {user_id}")
+            logger.info(f"Validating user profile for user_id:")
             response = await client.get(profile_url, headers=headers)
             
             if response.status_code == 200:
@@ -142,7 +142,7 @@ async def validate_user_profile_with_response(credentials: HTTPAuthorizationCred
                 }
                 
     except httpx.TimeoutException:
-        logger.error(f"Timeout calling admin API for user {user_id}")
+        logger.error(f"Timeout calling admin API for user")
         return {
             "success": False,
             "message": "User profile validation timeout. Please try again.",
@@ -196,7 +196,7 @@ async def validate_user_profile(credentials: HTTPAuthorizationCredentials):
         }
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"Validating user profile for user_id: {user_id}")
+            logger.info(f"Validating user profile for user_id")
             response = await client.get(profile_url, headers=headers)
             
             if response.status_code == 200:
@@ -216,19 +216,19 @@ async def validate_user_profile(credentials: HTTPAuthorizationCredentials):
             elif response.status_code == 401:
                 # For 401, check if there's a JSON response with error details
                 try:
-                    logger.info(f"401 response text for user {user_id}: {response.text}")
+                    logger.info(f"401 response text for user")
                     error_data = response.json()
                     error_message = error_data.get("message", "Authentication failed")
-                    logger.warning(f"Admin API returned 401 for user {user_id}: {error_message}")
+                    logger.warning(f"Admin API returned 401 for user")
                     raise HTTPException(status_code=403, detail=error_message)
                 except Exception as parse_error:
                     # Fallback if response is not JSON
-                    logger.error(f"Failed to parse 401 response for user {user_id}: {parse_error}")
+                    logger.error(f"Failed to parse 401 response for user {parse_error}")
                     logger.error(f"Response text: {response.text}")
                     raise HTTPException(status_code=401, detail="Authentication failed")
             
             elif response.status_code == 404:
-                logger.error(f"User {user_id} not found in admin system")
+                logger.error(f"User not found in admin system")
                 raise HTTPException(status_code=404, detail="User not found")
             
             else:
@@ -239,7 +239,7 @@ async def validate_user_profile(credentials: HTTPAuthorizationCredentials):
                 )
                 
     except httpx.TimeoutException:
-        logger.error(f"Timeout calling admin API for user {user_id}")
+        logger.error(f"Timeout calling admin API for user")
         raise HTTPException(
             status_code=500, 
             detail="User profile validation timeout"

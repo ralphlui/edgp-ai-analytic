@@ -48,9 +48,9 @@ class AuditSQSService:
                 # Use default credentials (IAM role, profile, etc.)
                 self.sqs_client = boto3.client('sqs', region_name=AWS_DEFAULT_REGION)
             
-            logger.info(f"✅ SQS client initialized for region: {AWS_DEFAULT_REGION}")
+            logger.info(f"SQS client initialized for region: {AWS_DEFAULT_REGION}")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize SQS client: {e}")
+            logger.error(f"Failed to initialize SQS client: {e}")
             self.sqs_client = None
     
     def send_audit_log(
@@ -84,11 +84,11 @@ class AuditSQSService:
             bool: True if log was sent successfully, False otherwise
         """
         if not self.queue_url:
-            logger.warning("⚠️ SQS queue URL not configured, skipping audit log")
+            logger.warning("SQS queue URL not configured, skipping audit log")
             return False
         
         if not self.sqs_client:
-            logger.warning("⚠️ SQS client not initialized, skipping audit log")
+            logger.warning("SQS client not initialized, skipping audit log")
             return False
         
         try:
@@ -132,18 +132,18 @@ class AuditSQSService:
             )
             
             message_id = response.get('MessageId')
-            logger.info(f"✅ Audit log sent to SQS: MessageId={message_id}")
+            logger.info(f"Audit log sent to SQS: MessageId={message_id}")
             return True
             
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', 'Unknown')
-            logger.error(f"❌ AWS SQS ClientError: {error_code} - {e}")
+            logger.error(f"AWS SQS ClientError: {error_code} - {e}")
             return False
         except BotoCoreError as e:
-            logger.error(f"❌ AWS SQS BotoCoreError: {e}")
+            logger.error(f"AWS SQS BotoCoreError: {e}")
             return False
         except Exception as e:
-            logger.error(f"❌ Failed to send audit log to SQS: {e}")
+            logger.error(f"Failed to send audit log to SQS: {e}")
             return False
     
     def send_analytics_query_audit(

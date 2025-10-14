@@ -84,10 +84,10 @@ class AnalyticsChartGenerator:
             
             # Validate data
             if total_requests == 0:
-                logger.warning("⚠️ No data to chart (total_requests = 0)")
+                logger.warning("No data to chart (total_requests = 0)")
                 return None
             
-            logger.info(f"📊 Generating bar chart for {target_type} '{target_value}'")
+            logger.info(f"Generating bar chart for {target_type} '{target_value}'")
             
             # Create figure and axis
             fig, ax = plt.subplots(figsize=self.figure_size, dpi=self.dpi)
@@ -98,19 +98,19 @@ class AnalyticsChartGenerator:
                 categories = ['Successful']
                 values = [successful_requests]
                 colors = [self.color_success]
-                logger.info(f"✅ Showing success-only chart: {successful_requests} successful requests")
+                logger.info(f"Showing success-only chart: {successful_requests} successful requests")
             elif chart_type == "failure_rate":
                 # Show only failed requests
                 categories = ['Failed']
                 values = [failed_requests]
                 colors = [self.color_failure]
-                logger.info(f"❌ Showing failure-only chart: {failed_requests} failed requests")
+                logger.info(f"Showing failure-only chart: {failed_requests} failed requests")
             else:
                 # Show both (default)
                 categories = ['Successful', 'Failed']
                 values = [successful_requests, failed_requests]
                 colors = [self.color_success, self.color_failure]
-                logger.info(f"📊 Showing combined chart: {successful_requests} success + {failed_requests} failed")
+                logger.info(f"Showing combined chart: {successful_requests} success + {failed_requests} failed")
             
             # Create vertical bar chart
             bars = ax.bar(categories, values, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
@@ -186,12 +186,12 @@ class AnalyticsChartGenerator:
             buffer.close()
             plt.close(fig)
             
-            logger.info(f"✅ Chart generated successfully ({len(image_base64)} bytes)")
+            logger.info(f"Chart generated successfully ({len(image_base64)} bytes)")
             
             return image_base64
             
         except Exception as e:
-            logger.exception(f"❌ Error generating chart: {e}")
+            logger.exception(f"Error generating chart: {e}")
             plt.close('all')  # Clean up any open figures
             return None
     
@@ -216,10 +216,10 @@ class AnalyticsChartGenerator:
             
             # Validate data
             if total_requests == 0:
-                logger.warning("⚠️ No data to chart (total_requests = 0)")
+                logger.warning("No data to chart (total_requests = 0)")
                 return None
             
-            logger.info(f"📊 Generating pie chart for {target_type} '{target_value}'")
+            logger.info(f"Generating pie chart for {target_type} '{target_value}'")
             
             # Create figure and axis
             fig, ax = plt.subplots(figsize=(8, 8), dpi=self.dpi)
@@ -275,12 +275,12 @@ class AnalyticsChartGenerator:
             buffer.close()
             plt.close(fig)
             
-            logger.info(f"✅ Pie chart generated successfully ({len(image_base64)} bytes)")
+            logger.info(f"Pie chart generated successfully ({len(image_base64)} bytes)")
             
             return image_base64
             
         except Exception as e:
-            logger.exception(f"❌ Error generating pie chart: {e}")
+            logger.exception(f"Error generating pie chart: {e}")
             plt.close('all')
             return None
 

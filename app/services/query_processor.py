@@ -80,16 +80,16 @@ class QueryProcessor:
             logger.info(f"JWT validated - user: {user_id}")
             
             # Extract intent and slots
-            logger.info(f"🤖 Extracting intent and slots from prompt: '{request.prompt}'")
+            logger.info(f"Extracting intent and slots from prompt: '{request.prompt}'")
             agent = get_query_understanding_agent()
             result = await agent.extract_intent_and_slots(request.prompt)
             result = agent.validate_completeness(result)
             
-            logger.info(f"🎯 Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
+            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
             
              # Handle out-of-scope queries (non-analytics questions)
             if result.clarification_needed is not None:
-                logger.info(f"📢 Out-of-scope query detected: '{request.prompt}'")
+                logger.info(f"Out-of-scope query detected: '{request.prompt}'")
                 return {
                     "success": False,
                     "message": result.clarification_needed or "I'm specialized in analytics. Please ask about success rates, failure rates, or data analysis.",
@@ -118,7 +118,7 @@ class QueryProcessor:
                     prev_target = f"domain '{prev_domain}'" if prev_domain else f"file '{prev_file}'"
                     curr_target = f"domain '{result.slots['domain_name']}'" if has_domain else f"file '{result.slots['file_name']}'"
                     
-                    logger.warning(f"⚠️ Target conflict detected: {prev_target} vs {curr_target}")
+                    logger.warning(f"arget conflict detected: {prev_target} vs {curr_target}")
                     
                     # Save the new extraction temporarily with a special marker
                     # This allows us to retrieve it when user confirms
@@ -129,7 +129,7 @@ class QueryProcessor:
                         original_prompt=f"[CONFLICT] {request.prompt}"
                     )
                     
-                    logger.info(f"💾 Saved conflicting target temporarily with _conflict_pending marker")
+                    logger.info(f"Saved conflicting target temporarily with _conflict_pending marker")
                     
                     # Ask user to choose
                     return {
@@ -152,7 +152,7 @@ class QueryProcessor:
             
             # CONFLICT RESOLUTION: Check if user is responding to a conflict
             if previous_data and previous_data.get('slots', {}).get('_conflict_pending'):
-                logger.info("🔍 Detected conflict resolution attempt")
+                logger.info("Detected conflict resolution attempt")
                 
                 # Remove the conflict marker for comparison
                 prev_slots = {k: v for k, v in previous_data.get('slots', {}).items() if k != '_conflict_pending'}
@@ -172,14 +172,14 @@ class QueryProcessor:
                     if any(keyword in prompt_lower for keyword in keywords):
                         if action == 'use_current':
                             # User chose the new target (the one with conflict marker)
-                            logger.info(f"✅ User confirmed: use new target from previous prompt")
+                            logger.info(f"User confirmed: use new target from previous prompt")
                             # Clean up the marker and continue
                             result.slots = prev_slots
                             # Don't inherit anything else - use what's in conflict
                             break
                         elif action == 'use_previous':
                             # User chose to go back to the target before the conflict
-                            logger.info(f"✅ User confirmed: revert to target before conflict")
+                            logger.info(f"User confirmed: revert to target before conflict")
                             
                             # Need to retrieve the record before the conflict
                             # For now, clear the conflict and ask user to re-specify
@@ -197,12 +197,12 @@ class QueryProcessor:
             
             # If missing report_type OR target, try to inherit from previous context
             if not has_report_type or not has_target:
-                logger.info(f"🔍 Missing fields detected - Checking for previous context to inherit...")
+                logger.info(f"Missing fields detected - Checking for previous context to inherit...")
                 logger.info(f"   has_report_type: {has_report_type}, has_target: {has_target}")
                 
                 # Use previous_data already retrieved above (for conflict detection)
                 if previous_data:
-                    logger.info(f"✅ Found previous context: {previous_data}")
+                    logger.info(f"Found previous context: {previous_data}")
                     
                     # Inherit missing report_type (only if previous has valid intent)
                     if not has_report_type:
@@ -210,7 +210,7 @@ class QueryProcessor:
                         if prev_report_type and prev_report_type in ['success_rate', 'failure_rate']:
                             result.intent = prev_report_type
                             logger.info(
-                                f"✨ Inherited report_type '{result.intent}' from previous prompt "
+                                f"Inherited report_type '{result.intent}' from previous prompt "
                                 f"(last updated: {previous_data.get('updated_at')})"
                             )
                     
@@ -219,10 +219,10 @@ class QueryProcessor:
                         prev_slots = previous_data.get('slots', {})
                         if prev_slots.get('domain_name'):
                             result.slots['domain_name'] = prev_slots['domain_name']
-                            logger.info(f"✨ Inherited domain_name '{result.slots['domain_name']}' from previous prompt")
+                            logger.info(f"Inherited domain_name '{result.slots['domain_name']}' from previous prompt")
                         elif prev_slots.get('file_name'):
                             result.slots['file_name'] = prev_slots['file_name']
-                            logger.info(f"✨ Inherited file_name '{result.slots['file_name']}' from previous prompt")
+                            logger.info(f"Inherited file_name '{result.slots['file_name']}' from previous prompt")
                     
                     # Re-validate after inheritance
                     has_report_type = result.intent in ['success_rate', 'failure_rate']
@@ -233,27 +233,27 @@ class QueryProcessor:
                     # Mark as complete if we now have both
                     if has_report_type and has_target:
                         result.is_complete = True
-                        logger.info(f"✅ Query completed after inheritance: intent={result.intent}, slots={result.slots}")
+                        logger.info(f"Query completed after inheritance: intent={result.intent}, slots={result.slots}")
                 else:
-                    logger.info(f"⏰ No previous context found (expired or never existed)")
+                    logger.info(f"No previous context found (expired or never existed)")
             
             
             # Save to DynamoDB if conditions are met
             # Note: Check AFTER inheritance to save merged values
             # Conditions: Intent is success_rate OR failure_rate OR has target (domain/file)
             
-            logger.info(f"🔍 Checking if should save to DynamoDB (after inheritance)...")
-            logger.info(f"📊 VALUES TO CHECK FOR SAVE:")
+            logger.info(f"Checking if should save to DynamoDB (after inheritance)...")
+            logger.info(f"VALUES TO CHECK FOR SAVE:")
             logger.info(f"   - Intent (after inheritance): '{result.intent}'")
             logger.info(f"   - Slots (after inheritance): {result.slots}")
             logger.info(f"   - Is complete (after inheritance): {result.is_complete}")
             
             should_save = pending_service.should_save_intent(result.intent, result.slots)
-            logger.info(f"💡 Should save result: {should_save}")
+            logger.info(f"Should save result: {should_save}")
             
             saved_data = None
             if should_save:
-                logger.info(f"💾 SAVING TO DYNAMODB:")
+                logger.info(f"SAVING TO DYNAMODB:")
                 logger.info(f"   - user_id: {user_id}")
                 logger.info(f"   - intent: '{result.intent}'")
                 logger.info(f"   - slots: {result.slots}")
@@ -267,15 +267,15 @@ class QueryProcessor:
                 )
                 
                 if saved_data:
-                    logger.info(f"✅ SAVE SUCCESSFUL:")
+                    logger.info(f"SAVE SUCCESSFUL:")
                     logger.info(f"   - Saved intent: {saved_data.get('intent')}")
                     logger.info(f"   - Saved slots: {saved_data.get('slots')}")
                     logger.info(f"   - Saved prompts count: {len(saved_data.get('prompts', []))}")
                 else:
-                    logger.error(f"❌ Failed to save to DynamoDB for user")
+                    logger.error(f"Failed to save to DynamoDB for user")
             else:
                 logger.info(
-                    f"⏭️ SKIPPING SAVE - Intent/slots do not meet criteria:"
+                    f"SKIPPING SAVE - Intent/slots do not meet criteria:"
                 )
                 logger.info(f"   - Intent: '{result.intent}'")
                 logger.info(f"   - Slots: {result.slots}")
@@ -337,7 +337,7 @@ class QueryProcessor:
                 }
             
             # Call analytics orchestrator - coordinates tool execution, chart generation, and response
-            logger.info(f"🚀 Calling analytics orchestrator")
+            logger.info(f"Calling analytics orchestrator")
             
             from app.agents.analytics_workflow_agent import run_analytics_query
             
@@ -350,8 +350,8 @@ class QueryProcessor:
                     "file_name": result.slots.get("file_name")
                 }
                 
-                logger.info(f"📊 Workflow input - Query: '{request.prompt}'")
-                logger.info(f"📊 Workflow input - Data: {extracted_data}")
+                logger.info(f"Workflow input - Query: '{request.prompt}'")
+                logger.info(f"Workflow input - Data: {extracted_data}")
                 
                 # Run workflow - LLM decides between success_rate and failure_rate tools
                 response = await run_analytics_query(
@@ -359,13 +359,13 @@ class QueryProcessor:
                     extracted_data=extracted_data
                 )
                 
-                logger.info(f"✅ Workflow completed successfully")
-                logger.info(f"📈 Response - Success: {response.get('success')}, Has chart: {response.get('chart_image') is not None}")
+                logger.info(f"Workflow completed successfully")
+                logger.info(f"Response - Success: {response.get('success')}, Has chart: {response.get('chart_image') is not None}")
                 
                 # OUTPUT VALIDATION: Check for information leaks before returning
                 is_safe_output, leak_error = validate_llm_output(response)
                 if not is_safe_output:
-                    logger.error(f"🚨 Blocked unsafe output for user {user_id}")
+                    logger.error(f"Blocked unsafe output for user {user_id}")
                     logger.error(f"   Leak detected: {leak_error}")
                     return {
                         "success": False,
@@ -376,7 +376,7 @@ class QueryProcessor:
                 return response
                 
             except Exception as e:
-                logger.exception(f"❌ Analytics workflow execution failed: {e}")
+                logger.exception(f"Analytics workflow execution failed: {e}")
                 return {
                     "success": False,
                     "message": f"I encountered an error while processing your analytics request: {str(e)}",

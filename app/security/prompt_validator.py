@@ -152,7 +152,7 @@ class PromptSecurityValidator:
             match = re.search(pattern, normalized, re.IGNORECASE | re.MULTILINE)
             if match:
                 # Log security event
-                logger.warning(f"🚨 Prompt injection detected: {attack_type}")
+                logger.warning(f"Prompt injection detected: {attack_type}")
                 logger.warning(f"   Pattern matched: {pattern}")
                 logger.warning(f"   Matched text: {match.group()}")
                 logger.warning(f"   Prompt preview: {prompt[:100]}...")
@@ -202,7 +202,7 @@ class PromptSecurityValidator:
             match = re.search(pattern, message_lower, re.IGNORECASE)
             if match:
                 # Log security event
-                logger.error(f"🚨 Information leak detected in output: {leak_type}")
+                logger.error(f"Information leak detected in output: {leak_type}")
                 logger.error(f"   Pattern matched: {pattern}")
                 logger.error(f"   Matched text: {match.group()}")
                 logger.error(f"   Response preview: {message[:200]}...")

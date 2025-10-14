@@ -167,7 +167,7 @@ def get_jwt_public_key(fallback_key: Optional[str] = None) -> Optional[str]:
     elif app_env in ['development']:
         secret_name = '/config/edgpv2'
     else:
-        logger.warning(f"⚠️ WARNING: Unknown environment '{app_env}', defaulting to SIT secret")
+        logger.warning(f"WARNING: Unknown environment '{app_env}', defaulting to SIT secret")
         secret_name = 'sit/edgp/secret'
     
     logger.info(f"Using secret name '{secret_name}' for JWT public key retrieval")
@@ -227,7 +227,7 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
     elif app_env in ['development']:
         secret_name = '/config/edgpv2'
     else:
-        logger.warning(f"⚠️ WARNING: Unknown environment '{app_env}', defaulting to SIT secret")
+        logger.warning(f" WARNING: Unknown environment '{app_env}', defaulting to SIT secret")
         secret_name = 'sit/edgp/secret'
     
     logger.info(f"Using secret name '{secret_name}' for OpenAI API key retrieval")

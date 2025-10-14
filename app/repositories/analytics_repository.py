@@ -40,8 +40,8 @@ class AnalyticsRepository:
         self.table = self.dynamodb.Table(table_name)
         self.header_table = self.dynamodb.Table(DYNAMODB_HEADER_TABLE_NAME)
         self.table_name = table_name
-        logger.info(f"📊 Initialized AnalyticsRepository with tracker table: {table_name}")
-        logger.info(f"📊 Header table: {DYNAMODB_HEADER_TABLE_NAME}")
+        logger.info(f"Initialized AnalyticsRepository with tracker table: {table_name}")
+        logger.info(f"Header table: {DYNAMODB_HEADER_TABLE_NAME}")
     
     def get_success_rate_by_domain(
         self,
@@ -62,7 +62,7 @@ class AnalyticsRepository:
             - target_type: "domain"
             - target_value: The domain name
         """
-        logger.info(f"📈 Querying success rate for domain: {domain_name}")
+        logger.info(f"Querying success rate for domain: {domain_name}")
         
         
         # Query DynamoDB using GSI
@@ -81,7 +81,7 @@ class AnalyticsRepository:
         }
         
         logger.info(
-            f"✅ Domain query complete - Total: {metrics['total']}, "
+            f"Domain query complete - Total: {metrics['total']}, "
             f"Success Rate: {metrics['success_rate']}%"
         )
         
@@ -99,7 +99,7 @@ class AnalyticsRepository:
         Returns:
             Dictionary containing analytics metrics (same structure as domain query)
         """
-        logger.info(f"📈 Querying success rate for file: {file_name}")
+        logger.info(f"Querying success rate for file: {file_name}")
         
         
         # Query DynamoDB using GSI
@@ -118,7 +118,7 @@ class AnalyticsRepository:
         }
         
         logger.info(
-            f"✅ File query complete - Total: {metrics['total']}, "
+            f"File query complete - Total: {metrics['total']}, "
             f"Success Rate: {metrics['success_rate']}%"
         )
         
@@ -136,7 +136,7 @@ class AnalyticsRepository:
         Returns:
             Dictionary containing failure rate metrics
         """
-        logger.info(f"📉 Querying failure rate for domain: {domain_name}")
+        logger.info(f"Querying failure rate for domain: {domain_name}")
         
         # Get success rate data first
         success_data = self.get_success_rate_by_domain(domain_name)
@@ -153,7 +153,7 @@ class AnalyticsRepository:
             "target_value": domain_name
         }
         
-        logger.info(f"✅ Domain failure rate: {failure_rate}%")
+        logger.info(f"Domain failure rate: {failure_rate}%")
         
         return result
     
@@ -170,7 +170,7 @@ class AnalyticsRepository:
         Returns:
             Dictionary containing failure rate metrics
         """
-        logger.info(f"📉 Querying failure rate for file: {file_name}")
+        logger.info(f"Querying failure rate for file: {file_name}")
         
         # Get success rate data first
         success_data = self.get_success_rate_by_file(file_name)
@@ -187,7 +187,7 @@ class AnalyticsRepository:
             "target_value": file_name
         }
         
-        logger.info(f"✅ File failure rate: {failure_rate}%")
+        logger.info(f"File failure rate: {failure_rate}%")
         
         return result
     
@@ -205,41 +205,41 @@ class AnalyticsRepository:
         Returns:
             List of items from DynamoDB
         """  
-        logger.info(f"🔍 Scanning DynamoDB table '{self.table_name}' for domain: {domain_name}")
+        logger.info(f"Scanning DynamoDB table '{self.table_name}' for domain: {domain_name}")
         items = []
         
         try:
             # Use scan with filter expression (no GSI required)
-            logger.info(f"📊 Using SCAN with FilterExpression (no GSI)")
+            logger.info(f"Using SCAN with FilterExpression (no GSI)")
             response = self.table.scan(
                 FilterExpression=Attr('domain_name').eq(domain_name)
             )
             
             items.extend(response.get('Items', []))
-            logger.info(f"📦 First page retrieved: {len(items)} items")
+            logger.info(f"First page retrieved: {len(items)} items")
             
             # Handle pagination
             while 'LastEvaluatedKey' in response:
-                logger.info(f"📄 Fetching next page (current items: {len(items)})")
+                logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
                     FilterExpression=Attr('domain_name').eq(domain_name),
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))
             
-            logger.info(f"✅ Retrieved {len(items)} total items from DynamoDB")
+            logger.info(f"Retrieved {len(items)} total items from DynamoDB")
             
             # Debug: Log first item if available
             if items:
                 first_item = items[0]
-                logger.info(f"🔍 Sample item fields: {list(first_item.keys())}")
-                logger.info(f"🔍 Sample item final_status: {first_item.get('final_status')}")
+                logger.info(f"Sample item fields: {list(first_item.keys())}")
+                logger.info(f"Sample item final_status: {first_item.get('final_status')}")
             else:
-                logger.warning(f"⚠️ No items found for domain: {domain_name}")
+                logger.warning(f"No items found for domain: {domain_name}")
             
         except Exception as e:
-            logger.exception(f"❌ Error scanning DynamoDB: {e}")
-            logger.error(f"❌ Table: {self.table_name}, Domain: {domain_name}")
+            logger.exception(f"Error scanning DynamoDB: {e}")
+            logger.error(f"Table: {self.table_name}, Domain: {domain_name}")
             # Return empty list on error
             return []
         
@@ -258,41 +258,41 @@ class AnalyticsRepository:
         Returns:
             List of items from DynamoDB
         """
-        logger.info(f"🔍 Querying for file: {file_name}")
+        logger.info(f"Querying for file: {file_name}")
 
         items = []
         
         try:
             # Step 1: Get file_id from header table using file_name
-            logger.info(f"📋 Step 1: Looking up file_id from header table for file_name: {file_name}")
+            logger.info(f"Step 1: Looking up file_id from header table for file_name: {file_name}")
             header_response = self.header_table.scan(
                 FilterExpression=Attr('file_name').eq(file_name)
             )
             
             header_items = header_response.get('Items', [])
             if not header_items:
-                logger.warning(f"⚠️ No file_id found in header table for file_name: {file_name}")
+                logger.warning(f"No file_id found in header table for file_name: {file_name}")
                 return []
             
             file_id = header_items[0].get('id')
             if not file_id:
-                logger.error(f"❌ Header record found but 'id' field is missing for file_name: {file_name}")
+                logger.error(f"Header record found but 'id' field is missing for file_name: {file_name}")
                 return []
             
-            logger.info(f"✅ Resolved file_name '{file_name}' -> file_id '{file_id}'")
+            logger.info(f"Resolved file_name '{file_name}' -> file_id '{file_id}'")
             
             # Step 2: Query tracker table using file_id and get final_status
-            logger.info(f"📊 Step 2: Scanning tracker table for file_id: {file_id}")
+            logger.info(f"Step 2: Scanning tracker table for file_id: {file_id}")
             response = self.table.scan(
                 FilterExpression=Attr('file_id').eq(file_id)
             )
             
             items.extend(response.get('Items', []))
-            logger.info(f"📦 First page retrieved: {len(items)} items")
+            logger.info(f"First page retrieved: {len(items)} items")
             
             # Handle pagination
             while 'LastEvaluatedKey' in response:
-                logger.info(f"📄 Fetching next page (current items: {len(items)})")
+                logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
                     FilterExpression=Attr('file_id').eq(file_id),
                     ExclusiveStartKey=response['LastEvaluatedKey']
@@ -304,15 +304,15 @@ class AnalyticsRepository:
             # Debug: Log first item if available
             if items:
                 first_item = items[0]
-                logger.info(f"🔍 Sample item fields: {list(first_item.keys())}")
-                logger.info(f"🔍 Sample item file_id: {first_item.get('file_id')}")
-                logger.info(f"🔍 Sample item final_status: {first_item.get('final_status')}")
+                logger.info(f"Sample item fields: {list(first_item.keys())}")
+                logger.info(f"Sample item file_id: {first_item.get('file_id')}")
+                logger.info(f"Sample item final_status: {first_item.get('final_status')}")
             else:
-                logger.warning(f"⚠️ No items found in tracker table for file_id: {file_id}")
+                logger.warning(f"No items found in tracker table for file_id: {file_id}")
             
         except Exception as e:
-            logger.exception(f"❌ Error querying DynamoDB: {e}")
-            logger.error(f"❌ Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name}")
+            logger.exception(f"Error querying DynamoDB: {e}")
+            logger.error(f"Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name}")
             # Return empty list on error
             return []
         
@@ -333,13 +333,13 @@ class AnalyticsRepository:
         # Debug: Log what statuses we're seeing
         if items:
             statuses = [item.get('final_status') for item in items[:5]]  # First 5
-            logger.info(f"🔍 Sample final_status values: {statuses}")
+            logger.info(f"Sample final_status values: {statuses}")
         
         # Use final_status field (not status)
         successful_requests = sum(1 for item in items if item.get('final_status') == 'success')
         failed_requests = total_requests - successful_requests
         
-        logger.info(f"📊 Metrics - Total: {total_requests}, Success: {successful_requests}, Failed: {failed_requests}")
+        logger.info(f"Metrics - Total: {total_requests}, Success: {successful_requests}, Failed: {failed_requests}")
         
         # Calculate success rate
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0.0
@@ -416,25 +416,25 @@ class AnalyticsRepository:
         Returns:
             List of sample items
         """
-        logger.info(f"🔍 DEBUG: Scanning table '{self.table_name}' for sample items...")
+        logger.info(f"DEBUG: Scanning table '{self.table_name}' for sample items...")
         
         try:
             response = self.table.scan(Limit=limit)
             items = response.get('Items', [])
             
-            logger.info(f"📦 Found {len(items)} sample items")
+            logger.info(f"Found {len(items)} sample items")
             
             if items:
                 first_item = items[0]
-                logger.info(f"🔍 Sample item fields: {list(first_item.keys())}")
-                logger.info(f"🔍 Sample domain_name values: {[item.get('domain_name') for item in items]}")
-                logger.info(f"🔍 Sample final_status values: {[item.get('final_status') for item in items]}")
-                logger.info(f"🔍 Sample status values (if exists): {[item.get('status') for item in items]}")
+                logger.info(f"Sample item fields: {list(first_item.keys())}")
+                logger.info(f"Sample domain_name values: {[item.get('domain_name') for item in items]}")
+                logger.info(f"Sample final_status values: {[item.get('final_status') for item in items]}")
+                logger.info(f"Sample status values (if exists): {[item.get('status') for item in items]}")
             
             return items
             
         except Exception as e:
-            logger.exception(f"❌ Error scanning table: {e}")
+            logger.exception(f"Error scanning table: {e}")
             return []
 
 
@@ -450,6 +450,6 @@ def get_analytics_repository(table_name: str = None) -> AnalyticsRepository:
     """
     if table_name is None:
         table_name = DYNAMODB_TRACKER_TABLE_NAME
-        logger.info(f"📋 Using table from config: {table_name}")
+        logger.info(f"Using table from config: {table_name}")
     
     return AnalyticsRepository(table_name)

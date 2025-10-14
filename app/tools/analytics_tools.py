@@ -47,18 +47,18 @@ def generate_success_rate_report(
         - generate_success_rate_report(domain_name="customer")
         - generate_success_rate_report(file_name="customer.csv")
     """
-    logger.info(f"🔧 Tool called: generate_success_rate_report(domain={domain_name}, file={file_name})")
+    logger.info(f"Tool called: generate_success_rate_report(domain={domain_name}, file={file_name})")
     
     # Validate input
     if not domain_name and not file_name:
-        logger.error("❌ Neither domain_name nor file_name provided")
+        logger.error("Neither domain_name nor file_name provided")
         return {
             "success": False,
             "error": "Must provide either domain_name or file_name"
         }
     
     if domain_name and file_name:
-        logger.error("❌ Both domain_name and file_name provided")
+        logger.error("Both domain_name and file_name provided")
         return {
             "success": False,
             "error": "Provide only ONE of domain_name or file_name, not both"
@@ -70,14 +70,14 @@ def generate_success_rate_report(
         
         # Query based on target type
         if domain_name:
-            logger.info(f"📊 Querying success rate for domain: {domain_name}")
+            logger.info(f"Querying success rate for domain: {domain_name}")
             data = repo.get_success_rate_by_domain(domain_name)
         else:
-            logger.info(f"📊 Querying success rate for file: {file_name}")
+            logger.info(f"Querying success rate for file: {file_name}")
             data = repo.get_success_rate_by_file(file_name)
         
         # Return raw data only - LLM will generate natural language response
-        logger.info(f"✅ Success rate data retrieved: {data['total_requests']} requests, {data['success_rate']}% success")
+        logger.info(f"Success rate data retrieved: {data['total_requests']} requests, {data['success_rate']}% success")
         
         return {
             "success": True,
@@ -93,7 +93,7 @@ def generate_success_rate_report(
         }
         
     except Exception as e:
-        logger.exception(f"❌ Error generating success rate report: {e}")
+        logger.exception(f"Error generating success rate report: {e}")
         return {
             "success": False,
             "error": f"Error generating report: {str(e)}"
@@ -135,18 +135,18 @@ def generate_failure_rate_report(
     
     Note: Must provide exactly one of domain_name or file_name, not both.
     """
-    logger.info(f"🔧 Tool called: generate_failure_rate_report(domain={domain_name}, file={file_name})")
+    logger.info(f"Tool called: generate_failure_rate_report(domain={domain_name}, file={file_name})")
     
     # Validate input - exactly one of domain_name or file_name required
     if not domain_name and not file_name:
-        logger.error("❌ Neither domain_name nor file_name provided")
+        logger.error("Neither domain_name nor file_name provided")
         return {
             "success": False,
             "error": "Must provide either domain_name or file_name"
         }
     
     if domain_name and file_name:
-        logger.error("❌ Both domain_name and file_name provided")
+        logger.error("Both domain_name and file_name provided")
         return {
             "success": False,
             "error": "Provide only ONE of domain_name or file_name, not both"
@@ -158,14 +158,14 @@ def generate_failure_rate_report(
         
         # Query based on target type
         if domain_name:
-            logger.info(f"📊 Querying failure rate for domain: {domain_name}")
+            logger.info(f"Querying failure rate for domain: {domain_name}")
             data = repo.get_failure_rate_by_domain(domain_name)
         else:
-            logger.info(f"📊 Querying failure rate for file: {file_name}")
+            logger.info(f"Querying failure rate for file: {file_name}")
             data = repo.get_failure_rate_by_file(file_name)
         
         # Return raw data only - LLM will generate natural language response
-        logger.info(f"✅ Failure rate data retrieved: {data['total_requests']} requests, {data['failure_rate']}% failures")
+        logger.info(f"Failure rate data retrieved: {data['total_requests']} requests, {data['failure_rate']}% failures")
         
         return {
             "success": True,
@@ -181,7 +181,7 @@ def generate_failure_rate_report(
         }
         
     except Exception as e:
-        logger.exception(f"❌ Error generating failure rate report: {e}")
+        logger.exception(f"Error generating failure rate report: {e}")
         return {
             "success": False,
             "error": f"Error generating report: {str(e)}"

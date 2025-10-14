@@ -120,9 +120,8 @@ class PendingIntentService:
             Dict with all saved values (user_id, intent, slots, prompts, timestamps) or None if save failed
         """
         try:
-            logger.info(f"💾 ========== SAVE INTENT AND SLOTS START ==========")
-            logger.info(f"💾 Input parameters:")
-            logger.info(f"   - user_id: {user_id}")
+            logger.info(f"========== SAVE INTENT AND SLOTS START ==========")
+            logger.info(f"Input parameters:")
             logger.info(f"   - intent: '{intent}'")
             logger.info(f"   - slots: {slots}")
             logger.info(f"   - original_prompt: '{original_prompt}'")
@@ -131,7 +130,7 @@ class PendingIntentService:
             existing = self.get_latest_intent(user_id)
             
             if existing:
-                logger.info(f"📝 Existing record found:")
+                logger.info(f"Existing record found:")
                 logger.info(f"   - Current intent: '{existing.get('intent')}'")
                 logger.info(f"   - Current slots: {existing.get('slots')}")
                 logger.info(f"   - Will REPLACE with new values (REPLACE strategy)")
@@ -149,17 +148,17 @@ class PendingIntentService:
                 if updated:
                     # Return the updated record
                     final_record = self.get_latest_intent(user_id)
-                    logger.info(f"✅ Update successful, final record:")
+                    logger.info(f"Update successful, final record:")
                     logger.info(f"   - Stored intent: '{final_record.get('intent')}'")
                     logger.info(f"   - Stored slots: {final_record.get('slots')}")
-                    logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+                    logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
                     return final_record
                 else:
-                    logger.error(f"❌ Update failed")
-                    logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+                    logger.error(f"Update failed")
+                    logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
                     return None
             
-            logger.info(f"📝 No existing record, creating new one")
+            logger.info(f"No existing record, creating new one")
             
             # Create new record
             ttl_timestamp = int((datetime.now() + timedelta(hours=self.ttl_hours)).timestamp())
@@ -184,7 +183,7 @@ class PendingIntentService:
                 'updated_at': datetime.now().isoformat()
             }
             
-            logger.info(f"💾 Creating new DynamoDB item:")
+            logger.info(f"Creating new DynamoDB item:")
             logger.info(f"   - report_type: '{intent}'")
             logger.info(f"   - slots: {slots}")
             logger.info(f"   - prompts_count: {len(prompts)}")
@@ -192,8 +191,8 @@ class PendingIntentService:
             # Save to DynamoDB
             self.table.put_item(Item=item)
             
-            logger.info(f"✅ Successfully created new record for user {user_id}")
-            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+            logger.info(f"Successfully created new record for user {user_id}")
+            logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
             
             # Return the saved record with all values
             return {
@@ -203,14 +202,14 @@ class PendingIntentService:
             }
             
         except ClientError as e:
-            logger.error(f"❌ DynamoDB ClientError for user {user_id}: {e}")
+            logger.error(f"DynamoDB ClientError for user {user_id}: {e}")
             logger.error(f"Error code: {e.response['Error']['Code']}")
             logger.error(f"Error message: {e.response['Error']['Message']}")
-            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+            logger.info(f"========= SAVE INTENT AND SLOTS END ==========")
             return None
         except Exception as e:
-            logger.exception(f"❌ Unexpected error saving intent and slots: {e}")
-            logger.info(f"💾 ========== SAVE INTENT AND SLOTS END ==========")
+            logger.exception(f"Unexpected error saving intent and slots: {e}")
+            logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
             return None
     
     def _update_existing_record(
@@ -238,8 +237,8 @@ class PendingIntentService:
             bool: True if update successful, False otherwise
         """
         try:
-            logger.info(f"🔄 ========== UPDATE EXISTING RECORD START ==========")
-            logger.info(f"🔄 Update parameters:")
+            logger.info(f"========== UPDATE EXISTING RECORD START ==========")
+            logger.info(f"Update parameters:")
             logger.info(f"   - user_id: {user_id}")
             logger.info(f"   - timestamp: {timestamp}")
             logger.info(f"   - new_intent: '{new_intent}'")
@@ -247,8 +246,8 @@ class PendingIntentService:
             logger.info(f"   - new_prompt: '{new_prompt}'")
             
             if not new_prompt:
-                logger.warning("⚠️ No prompt to append")
-                logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
+                logger.warning("No prompt to append")
+                logger.info(f"========== UPDATE EXISTING RECORD END ==========")
                 return False
             
             # Create new prompt entry
@@ -260,7 +259,7 @@ class PendingIntentService:
             # Calculate new TTL (refresh expiry time)
             new_ttl = int((datetime.now() + timedelta(hours=self.ttl_hours)).timestamp())
             
-            logger.info(f"🔄 Performing DynamoDB update:")
+            logger.info(f"Performing DynamoDB update:")
             logger.info(f"   - REPLACE report_type with: '{new_intent}'")
             logger.info(f"   - REPLACE slots with: {new_slots}")
             logger.info(f"   - APPEND prompt to history")
@@ -292,18 +291,18 @@ class PendingIntentService:
                 ReturnValues='UPDATED_NEW'
             )
             
-            logger.info(f"✅ DynamoDB update successful!")
+            logger.info(f"DynamoDB update successful!")
             logger.info(f"   - Updated attributes: {response.get('Attributes', {})}")
-            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
+            logger.info(f"========== UPDATE EXISTING RECORD END ==========")
             return True
             
         except ClientError as e:
-            logger.error(f"❌ Failed to update record for user {user_id}: {e}")
-            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
+            logger.error(f"Failed to update record for user {user_id}: {e}")
+            logger.info(f"========== UPDATE EXISTING RECORD END ==========")
             return False
         except Exception as e:
-            logger.exception(f"❌ Unexpected error updating record: {e}")
-            logger.info(f"🔄 ========== UPDATE EXISTING RECORD END ==========")
+            logger.exception(f"Unexpected error updating record: {e}")
+            logger.info(f"========== UPDATE EXISTING RECORD END ==========")
             return False
     
     def get_pending_intent(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -339,13 +338,13 @@ class PendingIntentService:
                 if ttl_timestamp and current_time >= ttl_timestamp:
                     # TTL has expired, treat as if record doesn't exist
                     logger.info(
-                        f"⏰ Pending intent found for user {user_id} but TTL expired: "
+                        f"Pending intent found for user {user_id} but TTL expired: "
                         f"ttl={ttl_timestamp}, now={current_time}, expired_by={current_time - ttl_timestamp}s"
                     )
                     return None
                 
                 logger.info(
-                    f"✅ Found pending intent for user {user_id}: report_type={item.get('report_type')}, "
+                    f"Found pending intent for user {user_id}: report_type={item.get('report_type')}, "
                     f"updated_at={item.get('updated_at')}, ttl_remaining={ttl_timestamp - current_time}s"
                 )
                 return {
@@ -355,7 +354,7 @@ class PendingIntentService:
                     'timestamp': item.get('timestamp')
                 }
             
-            logger.info(f"⏰ No pending intent found for user {user_id} (expired or never existed)")
+            logger.info(f"No pending intent found for user {user_id} (expired or never existed)")
             return None
             
         except ClientError as e:
@@ -505,7 +504,7 @@ class PendingIntentService:
         Returns:
             bool: True if should save, False otherwise
         """
-        logger.info(f"🔍 Checking save criteria - Intent: '{intent}', Slots: {slots}")
+        logger.info(f"Checking save criteria - Intent: '{intent}', Slots: {slots}")
         
         # Check if intent is one we want to save
         valid_intents = ['success_rate', 'failure_rate']
@@ -517,7 +516,7 @@ class PendingIntentService:
         has_required_slot = has_domain or has_file
         
         logger.info(
-            f"🔍 Criteria check - "
+            f"Criteria check - "
             f"is_valid_intent: {is_valid_intent}, "
             f"has_domain: {has_domain}, "
             f"has_file: {has_file}, "
@@ -529,13 +528,13 @@ class PendingIntentService:
         
         if should_save:
             logger.info(
-                f"✅ Save criteria met: "
+                f"Save criteria met: "
                 f"intent={intent} (valid={is_valid_intent}), "
                 f"has_domain={has_domain}, has_file={has_file}"
             )
         else:
             logger.info(
-                f"❌ Save criteria NOT met: "
+                f"Save criteria NOT met: "
                 f"intent={intent} (valid={is_valid_intent}), "
                 f"no domain_name or file_name in slots"
             )

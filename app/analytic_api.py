@@ -22,9 +22,9 @@ logger = get_logger("analytic_agent")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle application startup and shutdown events (stateless)."""
-    logger.info("� Starting Analytic Agent API (stateless)...")
+    logger.info("Starting Analytic Agent API (stateless)...")
     yield
-    logger.info("✅ Shutdown complete")
+    logger.info("Shutdown complete")
 
 # Create FastAPI app with lifespan handler
 app = FastAPI(
