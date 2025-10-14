@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the port the app runs on
-EXPOSE 8090
+EXPOSE 8091
 
 # Run the service
 CMD ["python", "main.py"]
