@@ -241,7 +241,7 @@ class TestOpenAIIntegration:
         pytest.skip("Tool mocking incompatible with LangChain StructuredTool - tested in actual workflow")
     
     @pytest.mark.asyncio
-    @patch('langchain_openai.ChatOpenAI')
+    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
     async def test_openai_response_formatting(self, mock_llm):
         """
         Test: OpenAI formats natural language responses correctly
