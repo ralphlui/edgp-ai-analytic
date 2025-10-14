@@ -39,22 +39,26 @@ class AnalyticsState(TypedDict):
 
 def execute_analytics_tool(state: AnalyticsState) -> dict:
     """
-    Let LLM decide which analytics tool to call based on user query.
+    Intelligent tool selection using report_type priority with LLM fallback.
     
-    Uses LangChain's tool calling with a comprehensive system prompt to:
-    1. Understand the user's intent (success rate vs failure rate)
-    2. Select the appropriate tool
-    3. Format the tool arguments correctly
+    Two-tier selection strategy:
+    1. If report_type provided (from multi-turn context) → Use it directly
+    2. If report_type is None → LLM analyzes user query keywords
+    
+    This provides:
+    - Accuracy for multi-turn conversations (explicit intent)
+    - Flexibility for single-turn queries (keyword analysis)
     
     Returns raw data only - no message formatting.
     """
     user_query = state["user_query"]
     extracted_data = state["extracted_data"]
+    report_type = extracted_data.get("report_type")
     domain_name = extracted_data.get("domain_name")
     file_name = extracted_data.get("file_name")
     
-    logger.info(f"LLM deciding which tool to call for: '{user_query}'")
-    logger.info(f"Available parameters - domain: {domain_name}, file: {file_name}")
+    logger.info(f"Tool selection for query: '{user_query}'")
+    logger.info(f"Report type: {report_type}, Domain: {domain_name}, File: {file_name}")
     
     # Get analytics tools
     from app.tools.analytics_tools import get_analytics_tools
@@ -67,15 +71,32 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     # Comprehensive system prompt explaining the task
     system_prompt = """You are an analytics tool selector. Your job is to:
 
-1. **Analyze the user's query** to determine what type of analytics they want
-2. **Select the appropriate tool** from the available analytics tools
-3. **Format the tool call** with the correct parameters in JSON format
+1. **Check if report_type is provided** (from previous conversation context)
+2. **If yes**: Use report_type to select the tool directly (HIGHEST PRIORITY)
+3. **If no**: Analyze the user's query to determine intent from keywords
+4. **Format the tool call** with the correct parameters in JSON format
+
+## PRIORITY RULES (Follow in order):
+
+### Rule 1: Use report_type if provided (HIGHEST PRIORITY)
+If report_type is given in the available parameters:
+- report_type = "success_rate" → MUST call generate_success_rate_report
+- report_type = "failure_rate" → MUST call generate_failure_rate_report
+- Do NOT analyze the user query for intent - trust the report_type
+
+### Rule 2: Analyze user query if report_type is missing (FALLBACK)
+If report_type is null/not provided:
+- Analyze user query for intent keywords:
+  - "success", "wins", "passed", "uptime", "completion" → generate_success_rate_report
+  - "failure", "errors", "issues", "problems", "fail" → generate_failure_rate_report
 
 ## Available Tools:
 
 ### generate_success_rate_report
 - **Purpose**: Analyze how often requests succeed
-- **When to use**: User asks about success, wins, completion, passed requests, uptime
+- **When to use**: 
+  - report_type = "success_rate" (explicit - PRIORITY), OR
+  - User asks about success, wins, completion, passed requests, uptime (inferred)
 - **Parameters**: 
   - domain_name (optional): The domain to analyze (e.g., "customer", "payment")
   - file_name (optional): The file to analyze (e.g., "customer.csv", "data.json")
@@ -84,7 +105,9 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
 
 ### generate_failure_rate_report
 - **Purpose**: Analyze how often requests fail
-- **When to use**: User asks about failures, errors, issues, problems, failed requests
+- **When to use**: 
+  - report_type = "failure_rate" (explicit - PRIORITY), OR
+  - User asks about failures, errors, issues, problems, failed requests (inferred)
 - **Parameters**:
   - domain_name (optional): The domain to analyze
   - file_name (optional): The file to analyze
@@ -93,45 +116,69 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
 
 ## Examples:
 
-User: "Show me success rate for customer domain"
-→ Tool: generate_success_rate_report
+**Example 1: Multi-turn with report_type (USE PRIORITY RULE)**
+Available Parameters:
+- report_type: "success_rate"  ← USE THIS FIRST!
+- domain_name: "customer"
+- file_name: null
+
+User Query: "customer domain"  ← Ignore ambiguous query, use report_type
+
+→ Tool: generate_success_rate_report (from report_type, not query)
 → Args: {"domain_name": "customer", "file_name": null}
 
-User: "What's the failure rate for transactions.csv?"
-→ Tool: generate_failure_rate_report
-→ Args: {"domain_name": null, "file_name": "transactions.csv"}
+**Example 2: Single-turn, no report_type (USE FALLBACK RULE)**
+Available Parameters:
+- report_type: null  ← Not provided, analyze query
+- domain_name: null
+- file_name: "data.csv"
 
+User Query: "Show me failures in data.csv"  ← Analyze "failures" keyword
 
-User: "What's the fail rate for transactions.csv?"
-→ Tool: generate_failure_rate_report
-→ Args: {"domain_name": null, "file_name": "transactions.csv"}
+→ Tool: generate_failure_rate_report (from "failures" keyword)
+→ Args: {"domain_name": null, "file_name": "data.csv"}
 
-User: "How many errors in the payment domain?"
-→ Tool: generate_failure_rate_report
+**Example 3: Multi-turn continuation**
+Available Parameters:
+- report_type: "failure_rate"  ← USE THIS!
+- domain_name: "payment"
+- file_name: null
+
+User Query: "payment domain"  ← Ignore query, use report_type
+
+→ Tool: generate_failure_rate_report (from report_type)
 → Args: {"domain_name": "payment", "file_name": null}
 
-User: "Show me wins for data.json"
-→ Tool: generate_success_rate_report
+**Example 4: Natural language with report_type**
+Available Parameters:
+- report_type: "success_rate"  ← USE THIS!
+- domain_name: null
+- file_name: "data.json"
+
+User Query: "data.json"  ← Ignore query, use report_type
+
+→ Tool: generate_success_rate_report (from report_type)
 → Args: {"domain_name": null, "file_name": "data.json"}
 
 ## Important Rules:
 
-1. **XOR Constraint**: NEVER provide both domain_name AND file_name - choose ONE
-2. **Null values**: Set the unused parameter to null/None
-3. **Intent mapping**: 
-   - success/wins/passed/uptime → generate_success_rate_report
-   - failure/errors/issues/problems/fail → generate_failure_rate_report
+1. **report_type Priority**: ALWAYS use report_type if provided (takes precedence over query analysis)
+2. **XOR Constraint**: NEVER provide both domain_name AND file_name - choose ONE
+3. **Null values**: Set the unused parameter to null/None
 4. **Case sensitivity**: Tool names are case-sensitive
 5. **JSON structure**: Arguments must be valid JSON with quoted keys
 
-Now analyze the user's query and select the appropriate tool."""
+Now analyze the available parameters and select the appropriate tool."""
 
     # Build the prompt with available parameters
     user_prompt = f"""User Query: "{user_query}"
 
 Available Parameters (extracted from conversation):
-- domain_name: {domain_name if domain_name else "not provided"}
-- file_name: {file_name if file_name else "not provided"}
+- report_type: {report_type if report_type else "null"}  ← CHECK THIS FIRST!
+- domain_name: {domain_name if domain_name else "null"}
+- file_name: {file_name if file_name else "null"}
+
+IMPORTANT: If report_type is provided, use it to select the tool (PRIORITY). Otherwise, analyze the user query.
 
 Select the appropriate analytics tool and call it with the correct parameters."""
 
@@ -368,38 +415,55 @@ def build_analytics_orchestrator() -> StateGraph:
 # Example usage
 async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     """
-    Run analytics query through orchestrator with LLM-based tool selection.
+    Run analytics query through orchestrator with hybrid tool selection.
     
-    The orchestrator will:
-    1. Analyze the user's natural language query
-    2. Decide which analytics tool to call (success_rate or failure_rate)
-    3. Format the tool arguments correctly from extracted_data
-    4. Generate chart visualization
-    5. Format natural language response
+    The orchestrator uses a two-tier selection strategy:
+    1. **Priority**: If report_type is provided → Use it directly (multi-turn context)
+    2. **Fallback**: If report_type is None → LLM analyzes query keywords (single-turn)
+    
+    This approach provides:
+    - Accuracy for multi-turn conversations (explicit intent from context)
+    - Flexibility for single-turn queries (intelligent keyword analysis)
+    - Robustness (handles both scenarios seamlessly)
     
     Args:
         user_query: Original user question (e.g., "Show me success rate for customer domain")
-        extracted_data: {domain_name?, file_name?} - parameters for tools
-                       Note: report_type is NOT needed - LLM decides the tool
+        extracted_data: {
+            report_type?: "success_rate" | "failure_rate" | None,  # Explicit intent (priority)
+            domain_name?: str | None,
+            file_name?: str | None
+        }
     
     Returns:
         Structured response dictionary:
         {
             "success": bool,
             "message": str (natural language response from LLM),
-            "chart_image": str or None (base64,... format)
+            "chart_image": str or None (base64 format)
         }
     
     Examples:
+        # Multi-turn: report_type provided from previous context (PRIORITY)
         >>> await run_analytics_query(
-        ...     user_query="What's the success rate for customer?",
-        ...     extracted_data={"domain_name": "customer", "file_name": None}
+        ...     user_query="customer domain",  # Turn 2 (ambiguous)
+        ...     extracted_data={
+        ...         "report_type": "success_rate",  # From Turn 1
+        ...         "domain_name": "customer",
+        ...         "file_name": None
+        ...     }
         ... )
+        # LLM uses report_type → generate_success_rate_report ✓
         
+        # Single-turn: LLM decides from query keywords (FALLBACK)
         >>> await run_analytics_query(
         ...     user_query="Show me failures in data.csv",
-        ...     extracted_data={"domain_name": None, "file_name": "data.csv"}
+        ...     extracted_data={
+        ...         "report_type": None,  # Not provided
+        ...         "domain_name": None,
+        ...         "file_name": "data.csv"
+        ...     }
         ... )
+        # LLM analyzes "failures" → generate_failure_rate_report ✓
     """
     orchestrator = build_analytics_orchestrator()
     
@@ -429,12 +493,13 @@ if __name__ == "__main__":
     # Test case 1: Success rate query - LLM decides the tool
     async def test_success_rate():
         print("\n" + "="*60)
-        print("TEST 1: Success Rate Query (Orchestrator)")
+        print("TEST 1: Success Rate Query (LLM analyzes keywords)")
         print("="*60)
         
         response = await run_analytics_query(
             user_query="What's the success rate for customer domain?",
             extracted_data={
+                "report_type": None,  # Not provided - LLM analyzes query
                 "domain_name": "customer",
                 "file_name": None
             }
@@ -450,12 +515,13 @@ if __name__ == "__main__":
     # Test case 2: Failure rate query - LLM decides the tool
     async def test_failure_rate():
         print("\n" + "="*60)
-        print("TEST 2: Failure Rate Query (LLM decides tool)")
+        print("TEST 2: Failure Rate Query (LLM analyzes keywords)")
         print("="*60)
         
         response = await run_analytics_query(
             user_query="Show me failures for transactions.csv",
             extracted_data={
+                "report_type": None,  # Not provided - LLM analyzes query
                 "domain_name": None,
                 "file_name": "transactions.csv"
             }
@@ -468,15 +534,16 @@ if __name__ == "__main__":
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
     
-    # Test case 3: Ambiguous query - LLM interprets "errors" as failure_rate
-    async def test_ambiguous():
+    # Test case 3: Multi-turn with report_type (PRIORITY)
+    async def test_multiturn():
         print("\n" + "="*60)
-        print("TEST 3: Ambiguous Query - 'errors' (LLM interprets)")
+        print("TEST 3: Multi-turn - report_type provided (PRIORITY)")
         print("="*60)
         
         response = await run_analytics_query(
-            user_query="How many errors in payment domain?",
+            user_query="payment domain",  # Ambiguous - no intent keywords
             extracted_data={
+                "report_type": "failure_rate",  # From Turn 1 - LLM uses this!
                 "domain_name": "payment",
                 "file_name": None
             }
@@ -498,6 +565,7 @@ if __name__ == "__main__":
         response = await run_analytics_query(
             user_query="Show me all the wins for data.json",
             extracted_data={
+                "report_type": None,  # Not provided - LLM analyzes "wins"
                 "domain_name": None,
                 "file_name": "data.json"
             }
@@ -511,9 +579,9 @@ if __name__ == "__main__":
         print()
     
     # Run all tests
-    print("\n" + "🚀 Starting LLM-Based Tool Selection Tests".center(60, "="))
+    print("\n" + "🚀 Hybrid Tool Selection Tests (Priority + Fallback)".center(60, "="))
     asyncio.run(test_success_rate())
     asyncio.run(test_failure_rate())
-    asyncio.run(test_ambiguous())
+    asyncio.run(test_multiturn())
     asyncio.run(test_natural())
     print("\n" + "✅ All Tests Complete".center(60, "=") + "\n")

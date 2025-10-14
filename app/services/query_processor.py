@@ -343,9 +343,11 @@ class QueryProcessor:
             
             try:
                 # Build extracted data for workflow
-                # Note: We only pass domain_name and file_name
-                # The LLM will analyze user_query to decide which tool to call
+                # Pass report_type (intent) to guide LLM tool selection
+                # - If report_type provided: LLM uses it directly (multi-turn context)
+                # - If report_type is None: LLM analyzes query keywords (fallback)
                 extracted_data = {
+                    "report_type": result.intent,
                     "domain_name": result.slots.get("domain_name"),
                     "file_name": result.slots.get("file_name")
                 }
@@ -353,7 +355,7 @@ class QueryProcessor:
                 logger.info(f"Workflow input - Query: '{request.prompt}'")
                 logger.info(f"Workflow input - Data: {extracted_data}")
                 
-                # Run workflow - LLM decides between success_rate and failure_rate tools
+                # Run workflow - LLM uses report_type if provided, otherwise analyzes query
                 response = await run_analytics_query(
                     user_query=request.prompt,
                     extracted_data=extracted_data
