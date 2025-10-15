@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-from app.config import DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME
+from app.config import DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME, AWS_REGION
 
 logger = logging.getLogger("analytic_agent")
 
@@ -36,7 +36,7 @@ class AnalyticsRepository:
         Args:
             table_name: Name of the DynamoDB tracker table
         """
-        self.dynamodb = boto3.resource('dynamodb')
+        self.dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
         self.table = self.dynamodb.Table(table_name)
         self.header_table = self.dynamodb.Table(DYNAMODB_HEADER_TABLE_NAME)
         self.table_name = table_name
