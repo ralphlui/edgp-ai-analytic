@@ -457,36 +457,6 @@ Return ONLY valid JSON matching the QueryUnderstandingResult schema. No addition
                 )
             return result
         
-        # Handle complex comparison queries
-        if query_type == "complex" and high_level_intent == "comparison":
-            # Check if we have at least 2 comparison targets
-            if len(result.comparison_targets) < 2:
-                result.is_complete = False
-                if len(result.comparison_targets) == 1:
-                    # Has one target, needs another
-                    target = result.comparison_targets[0]
-                    result.missing_required = ["second_comparison_target"]
-                    result.clarification_needed = (
-                        f"I see you want to compare {target}. "
-                        f"What would you like to compare it with? Please specify another file or domain."
-                    )
-                else:
-                    # No targets at all
-                    result.missing_required = ["comparison_targets"]
-                    # Use the intent if available, otherwise generic message
-                    metric_type = intent.replace('_', ' ') if intent and intent != "comparison" else "metrics"
-                    result.clarification_needed = (
-                        f"I understand you want to compare {metric_type}. "
-                        f"Please specify which files or domains to compare "
-                        f"(e.g., 'compare customer.csv and product.csv')."
-                    )
-            else:
-                # Has 2+ targets - complete!
-                result.is_complete = True
-                result.missing_required = []
-            
-            return result
-        
         elif intent == "general_query":
             # Check what's missing
             

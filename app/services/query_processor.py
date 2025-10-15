@@ -101,22 +101,52 @@ class QueryProcessor:
 
             # Check if query_type is 'complex' and save with comparison_targets
             if result.query_type == 'complex':
-                comparison_targets = result.slots.get('comparison_targets', [])
+                comparison_targets = result.comparison_targets
                 logger.info(f"High-level intent is 'complex'. Saving with comparison_targets: {comparison_targets}")
+                report_type = "" if result.intent == 'comparison' else result.intent
             
-            saved_data = pending_service.save_query_context(
+                saved_data = pending_service.save_query_context(
                 user_id=user_id,
-                intent=result.intent,
+                intent=report_type,
                 slots=result.slots,
                 original_prompt=request.prompt,
                 comparison_targets=comparison_targets
-            )
-            return {
-                "success": False,
-                "message": result.clarification_needed,
-                "chart_image": None,
-            }
-            
+                )
+
+                # Validate comparison_targets and intent for complex queries
+                has_comparison_targets = saved_data.get('comparison_targets') and len( saved_data.get('comparison_targets')) > 0
+                has_intent = saved_data.get('intent') and saved_data.get('intent') != ''
+
+                if not has_comparison_targets and not has_intent:
+                    # Both missing
+                    return {
+                        "success": False,
+                        "message": "Incomplete comparison query. Please specify:\n1. What to compare (e.g., 'customer.csv and product.csv')\n2. Type of analysis (success rate or failure rate)",
+                        "chart_image": None,
+                    }
+                elif not has_comparison_targets:
+                    # Missing comparison targets
+                    return {
+                        "success": False,
+                        "message": "Missing comparison targets. Please specify which files or domains you want to compare (e.g., 'compare customer.csv and product.csv')",
+                        "chart_image": None,
+                    }
+                elif not has_intent:
+                    # Missing intent
+                    return {
+                        "success": False,
+                        "message": "Missing analysis type. Please specify what you want to analyze (compare success rate or failure rate)",
+                        "chart_image": None,
+                    }
+                else:
+                    # Both present - log success
+                   return {
+                        "success": True,
+                        "message": f"Complex query validated - Intent: {saved_data.get('intent')}, Targets: {saved_data.get('comparison_targets')}",
+                        "chart_image": None,
+                    }
+                  
+              
             # Check if we're missing report_type OR target (domain/file)
             has_report_type = result.intent in ['success_rate', 'failure_rate']
             has_domain = result.slots.get('domain_name') and result.slots.get('domain_name') != ''
@@ -315,8 +345,8 @@ class QueryProcessor:
                         "⚠️ Missing Information: I need both the analysis type and target to proceed.\n\n"
                         "Please specify:\n"
                         "1. Analysis type: 'success rate' or 'failure rate'\n"
-                        "2. Target: a domain name (e.g., 'example.com') or file name (e.g., 'test.py')\n\n"
-                        "Example: 'Show me the success rate for example.com'"
+                        "2. Target: a domain name (e.g., 'customer domain') or file name (e.g., 'customer.csv')\n\n"
+                        "Example: 'Show me the success rate for customer domain'"
                     )
                     missing_fields = ["report_type", "target"]
                     
