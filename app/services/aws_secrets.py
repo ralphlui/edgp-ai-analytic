@@ -245,7 +245,7 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
             secret_json = json.loads(secret_data)
             if isinstance(secret_json, dict):
                 # Try different possible key names
-                for key_name in ['openai_api_key', 'OPENAI_API_KEY', 'openai_key', 'api_key']:
+                for key_name in ['ai_agent_api_key']:
                     if key_name in secret_json:
                         openai_key = secret_json[key_name]
                         logger.info(f"Extracted OpenAI API key from JSON secret")
@@ -256,6 +256,6 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
     
     # Fallback to simple name if environment-specific failed
     if openai_key is None:
-        openai_key = secrets_manager.get_secret("openai-api-key", fallback_key)
+        openai_key = secrets_manager.get_secret("ai-agent-api-key", fallback_key)
 
     return openai_key
