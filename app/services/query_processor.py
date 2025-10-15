@@ -6,7 +6,7 @@ import time
 from typing import Dict, Any
 
 from app.agents.query_understanding_agent import get_query_understanding_agent
-from app.services.pending_intent_service import get_pending_intent_service
+from app.services.query_context_service import get_query_context_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -84,10 +84,10 @@ class QueryProcessor:
             agent = get_query_understanding_agent()
             result = await agent.extract_intent_and_slots(request.prompt)
             result = agent.validate_completeness(result)
-            
-            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
-            
-             # Handle out-of-scope queries (non-analytics questions)
+
+            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete},  High Intent: {result.high_level_intent}, Clarification: {result.clarification_needed}, Query Type: {result.query_type}")
+
+            # Handle out-of-scope queries (non-analytics questions)
             if result.clarification_needed is not None:
                 logger.info(f"Out-of-scope query detected: '{request.prompt}'")
                 return {
@@ -97,7 +97,25 @@ class QueryProcessor:
                 }
             # Smart Inheritance Logic: Try to inherit missing fields from previous context
             # This enables natural multi-turn conversations
-            pending_service = get_pending_intent_service()
+            pending_service = get_query_context_service()
+
+            # Check if query_type is 'complex' and save with comparison_targets
+            if result.query_type == 'complex':
+                comparison_targets = result.slots.get('comparison_targets', [])
+                logger.info(f"High-level intent is 'complex'. Saving with comparison_targets: {comparison_targets}")
+            
+            saved_data = pending_service.save_query_context(
+                user_id=user_id,
+                intent=result.intent,
+                slots=result.slots,
+                original_prompt=request.prompt,
+                comparison_targets=comparison_targets
+            )
+            return {
+                "success": False,
+                "message": result.clarification_needed,
+                "chart_image": None,
+            }
             
             # Check if we're missing report_type OR target (domain/file)
             has_report_type = result.intent in ['success_rate', 'failure_rate']
@@ -106,7 +124,7 @@ class QueryProcessor:
             has_target = has_domain or has_file
             
             # Retrieve previous data first (for conflict detection and inheritance)
-            previous_data = pending_service.get_pending_intent(user_id)
+            previous_data = pending_service.get_query_context(user_id)
             
             # CONFLICT DETECTION: Check if user is switching target types
             if previous_data and has_target:
@@ -122,7 +140,7 @@ class QueryProcessor:
                     
                     # Save the new extraction temporarily with a special marker
                     # This allows us to retrieve it when user confirms
-                    pending_service.save_intent_and_slots(
+                    pending_service.save_query_context(
                         user_id=user_id,
                         intent=result.intent,
                         slots={**result.slots, '_conflict_pending': True},  # Add marker
@@ -183,7 +201,7 @@ class QueryProcessor:
                             
                             # Need to retrieve the record before the conflict
                             # For now, clear the conflict and ask user to re-specify
-                            pending_service.clear_intent(user_id)
+                            pending_service.clear_query_context(user_id)
                             
                             return {
                                 "success": False,
@@ -248,7 +266,7 @@ class QueryProcessor:
             logger.info(f"   - Slots (after inheritance): {result.slots}")
             logger.info(f"   - Is complete (after inheritance): {result.is_complete}")
             
-            should_save = pending_service.should_save_intent(result.intent, result.slots)
+            should_save = pending_service.should_save_context(result.intent, result.slots)
             logger.info(f"Should save result: {should_save}")
             
             saved_data = None
@@ -259,7 +277,7 @@ class QueryProcessor:
                 logger.info(f"   - slots: {result.slots}")
                 logger.info(f"   - prompt: '{request.prompt}'")
                 
-                saved_data = pending_service.save_intent_and_slots(
+                saved_data = pending_service.save_query_context(
                     user_id=user_id,
                     intent=result.intent,
                     slots=result.slots,
