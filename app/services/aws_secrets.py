@@ -256,6 +256,6 @@ def get_openai_api_key(fallback_key: Optional[str] = None) -> Optional[str]:
     
     # Fallback to simple name if environment-specific failed
     if openai_key is None:
-        openai_key = secrets_manager.get_secret("ai-agent-api-key", fallback_key)
+        openai_key = secrets_manager.get_secret("ai_agent_api_key", fallback_key)
 
     return openai_key
