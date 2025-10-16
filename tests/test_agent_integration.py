@@ -3,21 +3,21 @@ Integration tests for agent workflows and inter-agent communication.
 
 Tests the complete flow:
 1. query_understanding_agent extracts intent
-2. analytics_workflow_agent selects tools and executes
+2. simple_query_executor selects tools and executes
 3. Chart generation works end-to-end
 4. Response formatting completes successfully
 """
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from app.agents.query_understanding_agent import QueryUnderstandingAgent, QueryUnderstandingResult
-from app.agents.analytics_workflow_agent import run_analytics_query
+from app.orchestration.query_understanding_agent import QueryUnderstandingAgent, QueryUnderstandingResult
+from app.orchestration.simple_query_executor import run_analytics_query
 
 
 class TestAgentWorkflowIntegration:
     """Test complete agent workflow integration."""
     
     @pytest.mark.asyncio
-    @patch('app.agents.query_understanding_agent.ChatOpenAI')
+    @patch('app.orchestration.query_understanding_agent.ChatOpenAI')
     async def test_query_understanding_to_workflow_integration(self, mock_llm):
         """
         Test: query_understanding_agent → analytics_workflow_agent flow
@@ -64,7 +64,7 @@ class TestAgentWorkflowIntegration:
         assert extracted_data.get("domain_name") or extracted_data.get("file_name") or True  # Always pass if structure is correct
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     @patch('app.services.chart_service.generate_analytics_chart')
     async def test_end_to_end_success_rate_query(self, mock_chart, mock_get_tools, mock_llm):
@@ -128,7 +128,7 @@ class TestAgentWorkflowIntegration:
         mock_chart.assert_called_once()
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     async def test_failure_rate_workflow(self, mock_get_tools, mock_llm):
         """
@@ -189,7 +189,7 @@ class TestChartGenerationIntegration:
     """Test chart generation integration with analytics workflow."""
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.services.chart_service.generate_analytics_chart')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     async def test_chart_generation_in_workflow(self, mock_get_tools, mock_chart, mock_llm):
@@ -256,7 +256,7 @@ class TestChartGenerationIntegration:
         assert call_args[1]["chart_type"] == "success_rate"
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.services.chart_service.generate_analytics_chart')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     async def test_chart_generation_failure_handling(self, mock_get_tools, mock_chart, mock_llm):
@@ -316,7 +316,7 @@ class TestErrorPropagationIntegration:
     """Test error handling across agent boundaries."""
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     async def test_tool_error_propagates_to_response(self, mock_get_tools, mock_llm):
         """
@@ -364,7 +364,7 @@ class TestErrorPropagationIntegration:
         assert result["chart_image"] is None
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     async def test_llm_tool_selection_error_handling(self, mock_llm):
         """
         Test: LLM failures in tool selection are handled
@@ -385,7 +385,7 @@ class TestErrorPropagationIntegration:
         assert "error" in result["message"].lower()
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     async def test_llm_no_tool_call_handling(self, mock_llm):
         """
         Test: Handle case where LLM doesn't call any tool
@@ -414,7 +414,7 @@ class TestMultiAgentScenarios:
     """Test complex multi-agent interaction scenarios."""
     
     @pytest.mark.asyncio
-    @patch('app.agents.query_understanding_agent.ChatOpenAI')
+    @patch('app.orchestration.query_understanding_agent.ChatOpenAI')
     async def test_ambiguous_query_low_confidence(self, mock_llm):
         """
         Test: Ambiguous queries result in low confidence
@@ -441,7 +441,7 @@ class TestMultiAgentScenarios:
         # In production, this should trigger clarification request
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     async def test_file_name_parameter_flow(self, mock_get_tools, mock_llm):
         """
@@ -497,7 +497,7 @@ class TestPerformanceIntegration:
     """Test performance characteristics of integrated workflow."""
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     @patch('app.services.chart_service.generate_analytics_chart')
     async def test_workflow_completes_within_time_limit(self, mock_chart, mock_get_tools, mock_llm):

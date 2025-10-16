@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Dict, Any
 
-from app.agents.query_understanding_agent import get_query_understanding_agent
+from app.orchestration.query_understanding_agent import get_query_understanding_agent
 from app.services.query_context_service import get_query_context_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
 from fastapi import Request, Response, HTTPException
@@ -164,7 +164,7 @@ class QueryProcessor:
                 try:
                     # STEP 1: Create execution plan using Planner Agent
                     logger.info("STEP 1: Invoking Planner Agent to create execution plan")
-                    from app.agents.planner_agent import create_execution_plan
+                    from app.orchestration.planner_agent import create_execution_plan
                     
                     plan = create_execution_plan(
                         intent=saved_data.get('intent'),
@@ -179,7 +179,7 @@ class QueryProcessor:
                     
                     # STEP 2: Execute plan using Complex Query Executor
                     logger.info("STEP 2: Invoking Complex Query Executor to execute plan")
-                    from app.services.complex_query_executor import execute_plan
+                    from app.orchestration.complex_query_executor import execute_plan
                     
                     # Get org_id from JWT claims (already validated)
                     org_id = user.get("orgId")
@@ -454,7 +454,7 @@ class QueryProcessor:
             # Call analytics orchestrator - coordinates tool execution, chart generation, and response
             logger.info(f"Calling analytics orchestrator")
             
-            from app.agents.analytics_workflow_agent import run_analytics_query
+            from app.orchestration.simple_query_executor import run_analytics_query
             
             try:
                 # Build extracted data for workflow

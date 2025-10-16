@@ -235,20 +235,20 @@ class TestOpenAIIntegration:
         - LLM selects appropriate tools
         - Tool arguments parsed correctly
         """
-        from app.agents.analytics_workflow_agent import execute_analytics_tool
+        from app.orchestration.simple_query_executor import execute_analytics_tool
         
         # Skip this test - tool mocking too complex with LangChain
         pytest.skip("Tool mocking incompatible with LangChain StructuredTool - tested in actual workflow")
     
     @pytest.mark.asyncio
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     async def test_openai_response_formatting(self, mock_llm):
         """
         Test: OpenAI formats natural language responses correctly
         
         Validates LLM response generation.
         """
-        from app.agents.analytics_workflow_agent import format_response_with_llm
+        from app.orchestration.simple_query_executor import format_response_with_llm
         
         # Mock LLM response
         mock_response = Mock()
@@ -287,7 +287,7 @@ class TestOpenAIIntegration:
         
         Validates error handling for API failures.
         """
-        from app.agents.analytics_workflow_agent import execute_analytics_tool
+        from app.orchestration.simple_query_executor import execute_analytics_tool
         
         # Mock OpenAI error
         mock_llm.return_value.bind_tools.return_value.invoke.side_effect = Exception("API Error")
@@ -372,7 +372,7 @@ class TestEndToEndBackendFlow:
     @pytest.mark.asyncio
     @patch('app.security.auth.validate_jwt_token')
     @patch('boto3.resource')
-    @patch('app.agents.analytics_workflow_agent.ChatOpenAI')
+    @patch('app.orchestration.simple_query_executor.ChatOpenAI')
     @patch('app.tools.analytics_tools.get_analytics_tools')
     @patch('app.security.auth.httpx.AsyncClient')
     async def test_complete_authenticated_query_flow(
@@ -451,7 +451,7 @@ class TestEndToEndBackendFlow:
         
         # Execute complete flow
         from app.security.auth import validate_user_profile_with_response
-        from app.agents.analytics_workflow_agent import run_analytics_query
+        from app.orchestration.simple_query_executor import run_analytics_query
         
         # Step 1: Auth
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="fake-jwt-token")

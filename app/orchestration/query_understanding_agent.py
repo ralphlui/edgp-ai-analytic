@@ -73,14 +73,24 @@ Your task is to extract:
 
 ⚠️ **CRITICAL RULES:**
 
-1. **Intent Detection:**
-   - Keywords "success", "successful" → intent: "success_rate"
-   - Keywords "fail", "failure", "failed", "error" → intent: "failure_rate"
+1. **Intent Detection (HIGHEST PRIORITY - CHECK THESE FIRST):**
+   - If query contains "failure" OR "failed" OR "fail" OR "error" OR "failure rate" → intent: "failure_rate"
+   - If query contains "success" OR "successful" OR "success rate" → intent: "success_rate"
+   - Examples that MUST be "failure_rate":
+     * "I want to generate failure rate report"
+     * "create failure rate report"
+     * "show me failure rate"
+     * "failure rate for customer"
+   - Examples that MUST be "success_rate":
+     * "I want to generate success rate report"
+     * "create success rate report"
+     * "show me success rate"
+     * "success rate for customer"
    - Keywords "compare", "comparison", "vs", "versus" WITHOUT explicit metric → intent: "comparison"
    - Keywords "compare" WITH "success" → intent: "success_rate"
    - Keywords "compare" WITH "fail/failure/error" → intent: "failure_rate"
    - Greetings, chitchat, or non-analytics questions → intent: "out_of_scope"
-   - Analytics-related but unclear → intent: "general_query"
+   - Generic "generate report" OR "analytics" WITHOUT any metric keyword → intent: "general_query"
 
 2. **Query Type Detection:**
    - Keywords "compare", "between", "vs", "versus" → query_type: "complex", high_level_intent: "comparison"
@@ -122,7 +132,7 @@ Your task is to extract:
    - Set "is_complete" to true only if all required slots are present
    - For out_of_scope, always set is_complete=true (complete but not actionable)
 
-📊 **EXAMPLES:**
+**EXAMPLES:**
 
 **SIMPLE QUERIES:**
 
@@ -152,9 +162,51 @@ Output: {
   "clarification_needed": null
 }
 
+Input: "I want to generate failure rate report"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {},
+  "comparison_targets": [],
+  "confidence": 0.85,
+  "missing_required": ["domain_name or file_name"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want a failure rate report. Which file or domain would you like to analyze? (e.g., 'customer.csv' or 'customer domain')"
+}
+
+Input: "generate success rate report for payment"
+Output: {
+  "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"domain_name": "payment"},
+  "comparison_targets": [],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+  "is_complete": true,
+  "clarification_needed": null
+}
+
 Input: "show me success rate"
 Output: {
   "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {},
+  "comparison_targets": [],
+  "confidence": 0.8,
+  "missing_required": ["domain_name or file_name"],
+  "is_complete": false,
+  "clarification_needed": "I need to know which file or domain to analyze. Please specify a file name (e.g., 'customer.csv') or domain name (e.g., 'customer domain')."
+}
+
+Input: "show me failure or fail rate"
+Output: {
+  "intent": "failure_rate",
   "query_type": "simple",
   "high_level_intent": null,
   "slots": {},
@@ -312,7 +364,7 @@ Output: {
   "clarification_needed": null
 }
 
-Input: "generate a report or give me analytics report"
+Input: "generate a report"
 Output: {
   "intent": "general_query",
   "query_type": "simple",
