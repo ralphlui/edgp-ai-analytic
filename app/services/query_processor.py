@@ -99,22 +99,39 @@ class QueryProcessor:
             # This enables natural multi-turn conversations
             pending_service = get_query_context_service()
 
-            # Check if query_type is 'complex' and save with comparison_targets
+            # Check if query_type is 'complex' and handle with planner + executor
             if result.query_type == 'complex':
                 comparison_targets = result.comparison_targets
-                logger.info(f"High-level intent is 'complex'. Saving with comparison_targets: {comparison_targets}")
-                report_type = "" if result.intent == 'comparison' else result.intent
+                logger.info(f"Query type is 'complex'. Processing with Planner + Executor")
+                logger.info(f"Comparison targets: {comparison_targets}")
+                
+                # Determine intent for complex query
+                # Priority 1: Use extracted intent if it's success_rate or failure_rate
+                if result.intent in ['success_rate', 'failure_rate']:
+                    report_type = result.intent
+                    logger.info(f"Using extracted intent: {report_type}")
+                else:
+                    # Priority 2: Try to retrieve from previous context
+                    logger.info(f"Intent is '{result.intent}', retrieving from previous context...")
+                    previous_data = pending_service.get_query_context(user_id)
+                    if previous_data and previous_data.get('intent') in ['success_rate', 'failure_rate']:
+                        report_type = previous_data.get('intent')
+                        logger.info(f"Retrieved intent from database: {report_type}")
+                    else:
+                        report_type = ""
+                        logger.warning(f"No valid intent found (current: '{result.intent}', previous: None)")
             
+                # Save context for potential multi-turn conversations
                 saved_data = pending_service.save_query_context(
-                user_id=user_id,
-                intent=report_type,
-                slots=result.slots,
-                original_prompt=request.prompt,
-                comparison_targets=comparison_targets
+                    user_id=user_id,
+                    intent=report_type,
+                    slots=result.slots,
+                    original_prompt=request.prompt,
+                    comparison_targets=comparison_targets
                 )
 
                 # Validate comparison_targets and intent for complex queries
-                has_comparison_targets = saved_data.get('comparison_targets') and len( saved_data.get('comparison_targets')) > 0
+                has_comparison_targets = saved_data.get('comparison_targets') and len(saved_data.get('comparison_targets')) > 0
                 has_intent = saved_data.get('intent') and saved_data.get('intent') != ''
 
                 if not has_comparison_targets and not has_intent:
@@ -138,12 +155,66 @@ class QueryProcessor:
                         "message": "Missing analysis type. Please specify what you want to analyze (compare success rate or failure rate)",
                         "chart_image": None,
                     }
-                else:
-                    # Both present - log success
-                   return {
-                        "success": True,
-                        "message": f"Complex query validated - Intent: {saved_data.get('intent')}, Targets: {saved_data.get('comparison_targets')}",
-                        "chart_image": None,
+                
+                # Both present - proceed with planner + executor
+                logger.info("=" * 80)
+                logger.info("COMPLEX QUERY PROCESSING: Step-by-Step Execution")
+                logger.info("=" * 80)
+                
+                try:
+                    # STEP 1: Create execution plan using Planner Agent
+                    logger.info("STEP 1: Invoking Planner Agent to create execution plan")
+                    from app.agents.planner_agent import create_execution_plan
+                    
+                    plan = create_execution_plan(
+                        intent=saved_data.get('intent'),
+                        comparison_targets=saved_data.get('comparison_targets'),
+                        user_query=request.prompt,
+                        query_type='comparison'
+                    )
+                    
+                    logger.info(f"Planner created plan: {plan.plan_id}")
+                    logger.info(f"   Plan has {len(plan.steps)} steps")
+                    logger.info(f"   Estimated duration: {plan.metadata.get('estimated_duration', 'unknown')}")
+                    
+                    # STEP 2: Execute plan using Complex Query Executor
+                    logger.info("STEP 2: Invoking Complex Query Executor to execute plan")
+                    from app.services.complex_query_executor import execute_plan
+                    
+                    # Get org_id from JWT claims (already validated)
+                    org_id = user.get("orgId")
+                    
+                    result_response = await execute_plan(
+                        plan=plan.dict(),  # Convert Pydantic model to dict
+                        org_id=org_id,
+                        user_query=request.prompt
+                    )
+                    
+                    logger.info("Complex Query Executor completed")
+                    logger.info(f"   Success: {result_response.get('success')}")
+                    logger.info(f"   Has chart: {result_response.get('chart_image') is not None}")
+                    logger.info("=" * 80)
+                    
+                    # OUTPUT VALIDATION: Check for information leaks before returning
+                    is_safe_output, leak_error = validate_llm_output(result_response)
+                    if not is_safe_output:
+                        logger.error(f"Blocked unsafe output for user {user_id}")
+                        logger.error(f"   Leak detected: {leak_error}")
+                        return {
+                            "success": False,
+                            "message": "I apologize, but I cannot provide that information. Please ask about analytics data only.",
+                            "chart_image": None
+                        }
+                    
+                    return result_response
+                    
+                except Exception as e:
+                    logger.exception(f"Complex query processing failed: {e}")
+                    logger.info("=" * 80)
+                    return {
+                        "success": False,
+                        "message": f"I encountered an error while processing your comparison query: {str(e)}",
+                        "chart_image": None
                     }
                   
               
@@ -190,10 +261,6 @@ class QueryProcessor:
                             f"Which target should I use?\n"
                             f"1️⃣  {curr_target} (new target)\n"
                             f"2️⃣  {prev_target} (previous target)\n\n"
-                            f"💡 **Quick responses**:\n"
-                            f"   • Type '1' or 'use file' for option 1\n"
-                            f"   • Type '2' or 'use domain' for option 2\n"
-                            f"   • Or just tell me what to analyze next!"
                         ),
                         "chart_image": None,
                     }
