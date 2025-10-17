@@ -45,13 +45,15 @@ class AnalyticsRepository:
     
     def get_success_rate_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate success rate for a specific domain.
         
         Args:
             domain_name: The domain to analyze (e.g., "customer", "product", "location", "vendor")
+            org_id: Organization ID for multi-tenant data isolation (optional)
         
         Returns:
             Dictionary containing:
@@ -66,7 +68,7 @@ class AnalyticsRepository:
         
         
         # Query DynamoDB using GSI
-        items = self._query_by_domain(domain_name)
+        items = self._query_by_domain(domain_name, org_id=org_id)
         
         # Calculate metrics
         metrics = self._calculate_metrics(items)
@@ -90,12 +92,14 @@ class AnalyticsRepository:
     def get_success_rate_by_file(
         self,
         file_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate success rate for a specific file.
         
         Args:
             file_name: The file to analyze (e.g., "customer.csv")
+            org_id: Organization ID for multi-tenant data isolation (optional)
         Returns:
             Dictionary containing analytics metrics (same structure as domain query)
         """
@@ -103,7 +107,7 @@ class AnalyticsRepository:
         
         
         # Query DynamoDB using GSI
-        items = self._query_by_file(file_name)
+        items = self._query_by_file(file_name, org_id=org_id)
 
         # Calculate metrics
         metrics = self._calculate_metrics(items)
@@ -126,20 +130,22 @@ class AnalyticsRepository:
     
     def get_failure_rate_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate failure rate for a specific domain.
         
         Args:
             domain_name: The domain to analyze
+            org_id: Organization ID for multi-tenant data isolation (optional)
         Returns:
             Dictionary containing failure rate metrics
         """
         logger.info(f"Querying failure rate for domain: {domain_name}")
         
         # Get success rate data first
-        success_data = self.get_success_rate_by_domain(domain_name)
+        success_data = self.get_success_rate_by_domain(domain_name, org_id=org_id)
         
         # Calculate failure rate (inverse of success rate)
         failure_rate = 100.0 - success_data["success_rate"]
@@ -159,13 +165,15 @@ class AnalyticsRepository:
     
     def get_failure_rate_by_file(
         self,
-        file_name: str
+        file_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate failure rate for a specific file.
         
         Args:
             file_name: The file to analyze
+            org_id: Organization ID for multi-tenant data isolation (optional)
         
         Returns:
             Dictionary containing failure rate metrics
@@ -173,7 +181,7 @@ class AnalyticsRepository:
         logger.info(f"Querying failure rate for file: {file_name}")
         
         # Get success rate data first
-        success_data = self.get_success_rate_by_file(file_name)
+        success_data = self.get_success_rate_by_file(file_name, org_id=org_id)
         
         # Calculate failure rate
         failure_rate = 100.0 - success_data["success_rate"]
@@ -195,13 +203,15 @@ class AnalyticsRepository:
     
     def _query_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Scan DynamoDB for events by domain name (no GSI required).
         
         Args:
             domain_name: Domain to query
+            org_id: Organization ID for multi-tenant filtering (optional)
         Returns:
             List of items from DynamoDB
         """  
@@ -209,11 +219,15 @@ class AnalyticsRepository:
         items = []
         
         try:
+            # Build filter expression with optional org_id filtering
+            filter_expr = Attr('domain_name').eq(domain_name)
+            if org_id:
+                filter_expr = filter_expr & Attr('organization_id').eq(org_id)
+                logger.info(f"Filtering by organization_id: {org_id}")
+
             # Use scan with filter expression (no GSI required)
             logger.info(f"Using SCAN with FilterExpression (no GSI)")
-            response = self.table.scan(
-                FilterExpression=Attr('domain_name').eq(domain_name)
-            )
+            response = self.table.scan(FilterExpression=filter_expr)
             
             items.extend(response.get('Items', []))
             logger.info(f"First page retrieved: {len(items)} items")
@@ -222,7 +236,7 @@ class AnalyticsRepository:
             while 'LastEvaluatedKey' in response:
                 logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
-                    FilterExpression=Attr('domain_name').eq(domain_name),
+                    FilterExpression=filter_expr,
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))
@@ -247,7 +261,8 @@ class AnalyticsRepository:
     
     def _query_by_file(
         self,
-        file_name: str
+        file_name: str,
+        org_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Query DynamoDB for events by file name.
@@ -255,6 +270,7 @@ class AnalyticsRepository:
         
         Args:
             file_name: File to query
+            org_id: Organization ID for multi-tenant filtering (optional)
         Returns:
             List of items from DynamoDB
         """
@@ -283,9 +299,14 @@ class AnalyticsRepository:
             
             # Step 2: Query tracker table using file_id and get final_status
             logger.info(f"Step 2: Scanning tracker table for file_id: {file_id}")
-            response = self.table.scan(
-                FilterExpression=Attr('file_id').eq(file_id)
-            )
+            
+            # Build filter expression with optional org_id filtering
+            filter_expr = Attr('file_id').eq(file_id)
+            if org_id:
+                filter_expr = filter_expr & Attr('organization_id').eq(org_id)
+                logger.info(f"Filtering by organization_id: {org_id}")
+
+            response = self.table.scan(FilterExpression=filter_expr)
             
             items.extend(response.get('Items', []))
             logger.info(f"First page retrieved: {len(items)} items")
@@ -294,7 +315,7 @@ class AnalyticsRepository:
             while 'LastEvaluatedKey' in response:
                 logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
-                    FilterExpression=Attr('file_id').eq(file_id),
+                    FilterExpression=filter_expr,
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))

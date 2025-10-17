@@ -77,7 +77,10 @@ class QueryProcessor:
             if not user_id :
                 raise ValueError("JWT missing required claims: userid")
 
-            logger.info(f"JWT validated - user: {user_id}")
+            logger.info(f"JWT validated - user:")
+
+            # Get org_id from JWT claims (already validated)
+            org_id = user.get("orgId")
             
             # Extract intent and slots
             logger.info(f"Extracting intent and slots from prompt: '{request.prompt}'")
@@ -181,8 +184,6 @@ class QueryProcessor:
                     logger.info("STEP 2: Invoking Complex Query Executor to execute plan")
                     from app.orchestration.complex_query_executor import execute_plan
                     
-                    # Get org_id from JWT claims (already validated)
-                    org_id = user.get("orgId")
                     
                     result_response = await execute_plan(
                         plan=plan.dict(),  # Convert Pydantic model to dict
@@ -409,7 +410,7 @@ class QueryProcessor:
                 if not has_report_type and not has_target:
                     # Missing both report type and target
                     error_message = (
-                        "⚠️ Missing Information: I need both the analysis type and target to proceed.\n\n"
+                        "Missing Information: I need both the analysis type and target to proceed.\n\n"
                         "Please specify:\n"
                         "1. Analysis type: 'success rate' or 'failure rate'\n"
                         "2. Target: a domain name (e.g., 'customer domain') or file name (e.g., 'customer.csv')\n\n"
@@ -422,7 +423,7 @@ class QueryProcessor:
                     target = result.slots.get('domain_name') or result.slots.get('file_name')
                     target_type = "domain" if has_domain else "file"
                     error_message = (
-                        f"⚠️ Missing Analysis Type: I see you want to analyze {target_type} '{target}', "
+                        f"Missing Analysis Type: I see you want to analyze {target_type} '{target}', "
                         f"but I need to know what type of analysis.\n\n"
                         f"Please specify:\n"
                         f"- 'success rate' - to see successful operations\n"
@@ -435,7 +436,7 @@ class QueryProcessor:
                     # Missing only target (has report type)
                     analysis_type = result.intent.replace('_', ' ')
                     error_message = (
-                        f"⚠️ Missing Target: I understand you want {analysis_type} analysis, "
+                        f"Missing Target: I understand you want {analysis_type} analysis, "
                         f"but I need to know what to analyze.\n\n"
                         f"Please specify:\n"
                         f"- A domain name (e.g., 'customer domain')\n"
@@ -473,7 +474,8 @@ class QueryProcessor:
                 # Run workflow - LLM uses report_type if provided, otherwise analyzes query
                 response = await run_analytics_query(
                     user_query=request.prompt,
-                    extracted_data=extracted_data
+                    extracted_data=extracted_data,
+                    org_id=org_id
                 )
                 
                 logger.info(f"Workflow completed successfully")

@@ -15,7 +15,7 @@ Benefits:
 - Easier maintenance (clear separation of concerns)
 """
 import logging
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from app.config import OPENAI_API_KEY, OPENAI_MODEL
@@ -32,6 +32,7 @@ class AnalyticsState(TypedDict):
     """State for analytics workflow."""
     user_query: str
     extracted_data: dict  # {report_type, domain_name, file_name}
+    org_id: str  # Organization ID for multi-tenant data isolation
     tool_result: dict  # Raw data from tools
     chart_image: str  # Base64 chart image (plain base64 string or None)
     final_response: dict  # Structured response: {success, message, chart_image}
@@ -200,6 +201,12 @@ Select the appropriate analytics tool and call it with the correct parameters.""
             
             logger.info(f"LLM selected tool: {tool_name}")
             logger.info(f"Tool arguments: {tool_args}")
+            
+            # Add org_id to tool arguments for multi-tenant support
+            org_id = state.get("org_id")
+            if org_id:
+                tool_args["org_id"] = org_id
+                logger.info(f"Added org_id to tool args: {org_id}")
             
             # Execute the selected tool
             for tool in tools:
@@ -413,7 +420,7 @@ def build_analytics_orchestrator() -> StateGraph:
 
 
 # Example usage
-async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
+async def run_analytics_query(user_query: str, extracted_data: dict, org_id: Optional[str] = None) -> dict:
     """
     Run analytics query through orchestrator with hybrid tool selection.
     
@@ -433,6 +440,7 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
             domain_name?: str | None,
             file_name?: str | None
         }
+        org_id: Organization ID for multi-tenant data isolation (from JWT)
     
     Returns:
         Structured response dictionary:
@@ -470,6 +478,7 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     initial_state = {
         "user_query": user_query,
         "extracted_data": extracted_data,
+        "org_id": org_id or "",  # Pass org_id through state
         "tool_result": {},
         "chart_image": None,
         "final_response": {}
@@ -477,6 +486,8 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     
     logger.info(f"Starting orchestrator for: {user_query}")
     logger.info(f"Extracted parameters: {extracted_data}")
+    if org_id:
+        logger.info(f"Organization ID: {org_id}")
     
     # Run orchestrator - LLM will select appropriate tool
     final_state = await orchestrator.ainvoke(initial_state)
@@ -505,9 +516,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -527,9 +538,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -549,9 +560,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -571,9 +582,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -584,4 +595,4 @@ if __name__ == "__main__":
     asyncio.run(test_failure_rate())
     asyncio.run(test_multiturn())
     asyncio.run(test_natural())
-    print("\n" + "✅ All Tests Complete".center(60, "=") + "\n")
+    print("\n" + "All Tests Complete".center(60, "=") + "\n")

@@ -16,7 +16,8 @@ logger = logging.getLogger("analytic_agent")
 @tool
 def generate_success_rate_report(
     domain_name: Optional[str] = None,
-    file_name: Optional[str] = None
+    file_name: Optional[str] = None,
+    org_id: Optional[str] = None
 ) -> dict:
     """
     Retrieve success rate analytics data for a domain or file.
@@ -28,6 +29,7 @@ def generate_success_rate_report(
     Args:
         domain_name: The domain to analyze (e.g., "customer", "payment")
         file_name: The file to analyze (e.g., "customer.csv", "transactions.csv")
+        org_id: Organization ID for multi-tenant data isolation
     
     Returns:
         Dictionary with success status and raw analytics data:
@@ -47,7 +49,7 @@ def generate_success_rate_report(
         - generate_success_rate_report(domain_name="customer")
         - generate_success_rate_report(file_name="customer.csv")
     """
-    logger.info(f"Tool called: generate_success_rate_report(domain={domain_name}, file={file_name})")
+    logger.info(f"Tool called: generate_success_rate_report(domain={domain_name}, file={file_name}, org_id={org_id})")
     
     # Validate input
     if not domain_name and not file_name:
@@ -71,10 +73,10 @@ def generate_success_rate_report(
         # Query based on target type
         if domain_name:
             logger.info(f"Querying success rate for domain: {domain_name}")
-            data = repo.get_success_rate_by_domain(domain_name)
+            data = repo.get_success_rate_by_domain(domain_name, org_id=org_id)
         else:
             logger.info(f"Querying success rate for file: {file_name}")
-            data = repo.get_success_rate_by_file(file_name)
+            data = repo.get_success_rate_by_file(file_name, org_id=org_id)
         
         # Return raw data only - LLM will generate natural language response
         logger.info(f"Success rate data retrieved: {data['total_requests']} requests, {data['success_rate']}% success")
@@ -103,7 +105,8 @@ def generate_success_rate_report(
 @tool
 def generate_failure_rate_report(
     domain_name: Optional[str] = None,
-    file_name: Optional[str] = None
+    file_name: Optional[str] = None,
+    org_id: Optional[str] = None
 ) -> dict:
     """
     Retrieve failure rate analytics data.
@@ -116,6 +119,7 @@ def generate_failure_rate_report(
     Args:
         domain_name: The domain to analyze (e.g., "example.com")
         file_name: The file to analyze (e.g., "upload.pdf")
+        org_id: Organization ID for multi-tenant data isolation
     
     Returns:
         dict: {
@@ -135,7 +139,7 @@ def generate_failure_rate_report(
     
     Note: Must provide exactly one of domain_name or file_name, not both.
     """
-    logger.info(f"Tool called: generate_failure_rate_report(domain={domain_name}, file={file_name})")
+    logger.info(f"Tool called: generate_failure_rate_report(domain={domain_name}, file={file_name}, org_id={org_id})")
     
     # Validate input - exactly one of domain_name or file_name required
     if not domain_name and not file_name:
@@ -159,10 +163,10 @@ def generate_failure_rate_report(
         # Query based on target type
         if domain_name:
             logger.info(f"Querying failure rate for domain: {domain_name}")
-            data = repo.get_failure_rate_by_domain(domain_name)
+            data = repo.get_failure_rate_by_domain(domain_name, org_id=org_id)
         else:
             logger.info(f"Querying failure rate for file: {file_name}")
-            data = repo.get_failure_rate_by_file(file_name)
+            data = repo.get_failure_rate_by_file(file_name, org_id=org_id)
         
         # Return raw data only - LLM will generate natural language response
         logger.info(f"Failure rate data retrieved: {data['total_requests']} requests, {data['failure_rate']}% failures")
