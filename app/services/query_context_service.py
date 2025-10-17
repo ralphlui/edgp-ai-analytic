@@ -13,8 +13,8 @@ from botocore.exceptions import ClientError
 
 from app.config import (
     AWS_REGION,
-    DYNAMODB_PENDING_INTENTS_TABLE,
-    PENDING_INTENT_TTL_HOURS
+    DYNAMODB_CONVERSATION_CONTEXT_TABLE,
+    CONVERSATION_CONTEXT_TTL_HOURS
 )
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,8 @@ class QueryContextService:
         """Initialize DynamoDB client and table."""
         self.dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
         self.dynamodb_client = boto3.client('dynamodb', region_name=AWS_REGION)
-        self.table_name = DYNAMODB_PENDING_INTENTS_TABLE
-        self.ttl_hours = PENDING_INTENT_TTL_HOURS
+        self.table_name = DYNAMODB_CONVERSATION_CONTEXT_TABLE
+        self.ttl_hours = CONVERSATION_CONTEXT_TTL_HOURS
         
         # Create table if it doesn't exist
         self._ensure_table_exists()

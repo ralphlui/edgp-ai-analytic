@@ -188,18 +188,18 @@ class TestDynamoDBConfig:
         from app.config import (
             DYNAMODB_TRACKER_TABLE_NAME,
             DYNAMODB_HEADER_TABLE_NAME,
-            DYNAMODB_PENDING_INTENTS_TABLE
+            DYNAMODB_CONVERSATION_CONTEXT_TABLE
         )
         
-        # These may be None in test environment, but should be defined
-        assert DYNAMODB_PENDING_INTENTS_TABLE == 'analytic_pending_intents'
+        # Conversation context table should have proper default
+        assert DYNAMODB_CONVERSATION_CONTEXT_TABLE == 'analytics_conversation_context'
     
-    def test_pending_intent_ttl(self):
-        """Test pending intent TTL configuration."""
-        from app.config import PENDING_INTENT_TTL_HOURS
+    def test_conversation_context_ttl(self):
+        """Test conversation context TTL configuration."""
+        from app.config import CONVERSATION_CONTEXT_TTL_HOURS
         
-        assert isinstance(PENDING_INTENT_TTL_HOURS, float)
-        assert PENDING_INTENT_TTL_HOURS > 0
+        assert isinstance(CONVERSATION_CONTEXT_TTL_HOURS, float)
+        assert CONVERSATION_CONTEXT_TTL_HOURS > 0
 
 
 class TestOpenAIConfig:
