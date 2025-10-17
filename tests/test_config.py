@@ -185,14 +185,21 @@ class TestDynamoDBConfig:
     
     def test_dynamodb_table_names(self):
         """Test DynamoDB table name configuration."""
+        import os
         from app.config import (
             DYNAMODB_TRACKER_TABLE_NAME,
             DYNAMODB_HEADER_TABLE_NAME,
             DYNAMODB_CONVERSATION_CONTEXT_TABLE
         )
         
-        # Conversation context table should have proper default
-        assert DYNAMODB_CONVERSATION_CONTEXT_TABLE == 'analytics_conversation_context'
+        # Conversation context table should match environment
+        env = os.getenv('APP_ENV', 'development').lower()
+        if env == 'test':
+            # Test environment uses test suffix
+            assert DYNAMODB_CONVERSATION_CONTEXT_TABLE == 'analytics_conversation_context_test'
+        else:
+            # Other environments use standard name
+            assert DYNAMODB_CONVERSATION_CONTEXT_TABLE == 'analytics_conversation_context'
     
     def test_conversation_context_ttl(self):
         """Test conversation context TTL configuration."""

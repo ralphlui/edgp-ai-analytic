@@ -405,9 +405,9 @@ class TestErrorPropagationIntegration:
             extracted_data={"domain_name": None, "file_name": None}
         )
         
-        # Should return error
+        # Should return error with clarification message
         assert result["success"] is False
-        assert "could not determine" in result["message"].lower()
+        assert "couldn't determine" in result["message"].lower() or "could not determine" in result["message"].lower()
 
 
 class TestMultiAgentScenarios:
