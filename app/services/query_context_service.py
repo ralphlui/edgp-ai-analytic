@@ -141,6 +141,7 @@ class QueryContextService:
                 
                 # REPLACE strategy: Update existing record with new values
                 # This also refreshes the TTL
+                intent = intent if intent != "" else existing.get('intent')
                 updated = self._update_existing_record(
                     user_id=user_id,
                     timestamp=existing['timestamp'],
