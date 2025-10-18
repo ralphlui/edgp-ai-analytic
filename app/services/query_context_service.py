@@ -1,7 +1,8 @@
 """
-Service for managing pending intents and slots in DynamoDB.
+Service for managing query context in DynamoDB.
 
-This service stores incomplete user queries to support multi-turn conversations.
+This service stores user query context (report type, domain/file targets, prompts) 
+to support multi-turn conversations and context inheritance.
 """
 import logging
 import time
@@ -12,33 +13,33 @@ from botocore.exceptions import ClientError
 
 from app.config import (
     AWS_REGION,
-    DYNAMODB_PENDING_INTENTS_TABLE,
-    PENDING_INTENT_TTL_HOURS
+    DYNAMODB_CONVERSATION_CONTEXT_TABLE,
+    CONVERSATION_CONTEXT_TTL_HOURS
 )
 
 logger = logging.getLogger(__name__)
 
 
-class PendingIntentService:
+class QueryContextService:
     """
-    Service for managing pending intents in DynamoDB.
+    Service for managing query context in DynamoDB.
     
-    Stores extracted intent and slots when user query is complete,
-    allowing the system to track what analysis the user wants to perform.
+    Stores query context including report type and target entities (domain/file)
+    to enable multi-turn conversations and context inheritance across queries.
     """
     
     def __init__(self):
         """Initialize DynamoDB client and table."""
         self.dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
         self.dynamodb_client = boto3.client('dynamodb', region_name=AWS_REGION)
-        self.table_name = DYNAMODB_PENDING_INTENTS_TABLE
-        self.ttl_hours = PENDING_INTENT_TTL_HOURS
+        self.table_name = DYNAMODB_CONVERSATION_CONTEXT_TABLE
+        self.ttl_hours = CONVERSATION_CONTEXT_TTL_HOURS
         
         # Create table if it doesn't exist
         self._ensure_table_exists()
         
         self.table = self.dynamodb.Table(self.table_name)
-        logger.info(f"PendingIntentService initialized with table: {self.table_name}")
+        logger.info(f"QueryContextService initialized with table: {self.table_name}")
     
     def _ensure_table_exists(self):
         """Create DynamoDB table if it doesn't exist."""
@@ -94,15 +95,16 @@ class PendingIntentService:
             logger.exception(f"Unexpected error ensuring table exists: {e}")
             raise
     
-    def save_intent_and_slots(
+    def save_query_context(
         self,
         user_id: str,
         intent: str,
         slots: Dict[str, Any],
-        original_prompt: str = None
+        original_prompt: str = None,
+        comparison_targets: Optional[list] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Save extracted intent and slots to DynamoDB.
+        Save query context (report type, slots, prompt, comparison targets) to DynamoDB.
         
         This is called when:
         - Intent is success_rate or failure_rate
@@ -115,19 +117,21 @@ class PendingIntentService:
             intent: Extracted intent (success_rate, failure_rate, etc.)
             slots: Extracted slot values (domain_name, file_name, chart_type, etc.)
             original_prompt: Optional original user prompt for context
-            
+            comparison_targets: Optional list of comparison target files
+        
         Returns:
             Dict with all saved values (user_id, intent, slots, prompts, timestamps) or None if save failed
         """
         try:
-            logger.info(f"========== SAVE INTENT AND SLOTS START ==========")
+            logger.info(f"========== SAVE QUERY CONTEXT START ==========")
             logger.info(f"Input parameters:")
             logger.info(f"   - intent: '{intent}'")
             logger.info(f"   - slots: {slots}")
             logger.info(f"   - original_prompt: '{original_prompt}'")
+            logger.info(f"   - comparison_targets: {comparison_targets}")
             
-            # Check if user already has a pending intent
-            existing = self.get_latest_intent(user_id)
+            # Check if user already has existing context
+            existing = self.get_full_context(user_id)
             
             if existing:
                 logger.info(f"Existing record found:")
@@ -137,25 +141,27 @@ class PendingIntentService:
                 
                 # REPLACE strategy: Update existing record with new values
                 # This also refreshes the TTL
+                intent = intent if intent != "" else existing.get('intent')
                 updated = self._update_existing_record(
                     user_id=user_id,
                     timestamp=existing['timestamp'],
                     new_intent=intent,
                     new_slots=slots,
-                    new_prompt=original_prompt
+                    new_prompt=original_prompt,
+                    new_comparison_targets=comparison_targets
                 )
                 
                 if updated:
                     # Return the updated record
-                    final_record = self.get_latest_intent(user_id)
+                    final_record = self.get_full_context(user_id)
                     logger.info(f"Update successful, final record:")
                     logger.info(f"   - Stored intent: '{final_record.get('intent')}'")
                     logger.info(f"   - Stored slots: {final_record.get('slots')}")
-                    logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
+                    logger.info(f"========== SAVE QUERY CONTEXT END ==========")
                     return final_record
                 else:
                     logger.error(f"Update failed")
-                    logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
+                    logger.info(f"========== SAVE QUERY CONTEXT END ==========")
                     return None
             
             logger.info(f"No existing record, creating new one")
@@ -183,33 +189,38 @@ class PendingIntentService:
                 'updated_at': datetime.now().isoformat()
             }
             
+            if comparison_targets:
+                item['comparison_targets'] = comparison_targets
+            
             logger.info(f"Creating new DynamoDB item:")
             logger.info(f"   - report_type: '{intent}'")
             logger.info(f"   - slots: {slots}")
             logger.info(f"   - prompts_count: {len(prompts)}")
+            logger.info(f"   - comparison_targets: {comparison_targets}")
             
             # Save to DynamoDB
             self.table.put_item(Item=item)
             
             logger.info(f"Successfully created new record for user {user_id}")
-            logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
+            logger.info(f"========== SAVE QUERY CONTEXT END ==========")
             
             # Return the saved record with all values
             return {
                 'intent': intent,
                 'slots': slots,
                 'prompts': prompts,
+                'comparison_targets': comparison_targets
             }
             
         except ClientError as e:
             logger.error(f"DynamoDB ClientError for user {user_id}: {e}")
             logger.error(f"Error code: {e.response['Error']['Code']}")
             logger.error(f"Error message: {e.response['Error']['Message']}")
-            logger.info(f"========= SAVE INTENT AND SLOTS END ==========")
+            logger.info(f"========= SAVE QUERY CONTEXT END ==========")
             return None
         except Exception as e:
-            logger.exception(f"Unexpected error saving intent and slots: {e}")
-            logger.info(f"========== SAVE INTENT AND SLOTS END ==========")
+            logger.exception(f"Unexpected error saving query context: {e}")
+            logger.info(f"========== SAVE QUERY CONTEXT END ==========")
             return None
     
     def _update_existing_record(
@@ -218,10 +229,11 @@ class PendingIntentService:
         timestamp: int,
         new_intent: str,
         new_slots: Dict[str, Any],
-        new_prompt: str
+        new_prompt: str,
+        new_comparison_targets: Optional[list] = None
     ) -> bool:
         """
-        Update an existing pending intent record with REPLACE strategy.
+        Update an existing query context record with REPLACE strategy.
         
         This replaces the intent and slots with new values and appends the prompt to history.
         TTL is also refreshed to keep active conversations alive.
@@ -232,7 +244,8 @@ class PendingIntentService:
             new_intent: New intent to replace existing (e.g., 'success_rate')
             new_slots: New slots to replace existing
             new_prompt: New prompt to append to prompts history
-            
+            new_comparison_targets: New comparison targets to replace existing
+        
         Returns:
             bool: True if update successful, False otherwise
         """
@@ -244,6 +257,7 @@ class PendingIntentService:
             logger.info(f"   - new_intent: '{new_intent}'")
             logger.info(f"   - new_slots: {new_slots}")
             logger.info(f"   - new_prompt: '{new_prompt}'")
+            logger.info(f"   - new_comparison_targets: {new_comparison_targets}")
             
             if not new_prompt:
                 logger.warning("No prompt to append")
@@ -259,11 +273,31 @@ class PendingIntentService:
             # Calculate new TTL (refresh expiry time)
             new_ttl = int((datetime.now() + timedelta(hours=self.ttl_hours)).timestamp())
             
+            update_expression = ('SET report_type = :intent, '
+                                'slots = :slots, '
+                                'prompts = list_append(if_not_exists(prompts, :empty_list), :new_prompt), '
+                                'updated_at = :updated_at, '
+                                '#ttl = :ttl')
+            
+            expression_attribute_values = {
+                ':intent': new_intent,  # REPLACE intent
+                ':slots': new_slots,     # REPLACE slots
+                ':empty_list': [],
+                ':new_prompt': [new_prompt_entry],
+                ':updated_at': datetime.now().isoformat(),
+                ':ttl': new_ttl
+            }
+            
+            if new_comparison_targets:
+                update_expression += ', comparison_targets = :comparison_targets'
+                expression_attribute_values[':comparison_targets'] = new_comparison_targets
+            
             logger.info(f"Performing DynamoDB update:")
             logger.info(f"   - REPLACE report_type with: '{new_intent}'")
             logger.info(f"   - REPLACE slots with: {new_slots}")
             logger.info(f"   - APPEND prompt to history")
             logger.info(f"   - REFRESH TTL to: {new_ttl}")
+            logger.info(f"   - REPLACE comparison_targets with: {new_comparison_targets}")
             
             # Update: REPLACE intent and slots, append prompt, refresh TTL
             # Note: 'ttl' is a reserved keyword in DynamoDB, so we use ExpressionAttributeNames
@@ -272,22 +306,11 @@ class PendingIntentService:
                     'user_id': user_id,
                     'timestamp': timestamp
                 },
-                UpdateExpression='SET report_type = :intent, '
-                                'slots = :slots, '
-                                'prompts = list_append(if_not_exists(prompts, :empty_list), :new_prompt), '
-                                'updated_at = :updated_at, '
-                                '#ttl = :ttl',
+                UpdateExpression=update_expression,
                 ExpressionAttributeNames={
                     '#ttl': 'ttl'  # Handle reserved keyword
                 },
-                ExpressionAttributeValues={
-                    ':intent': new_intent,  # REPLACE intent
-                    ':slots': new_slots,     # REPLACE slots
-                    ':empty_list': [],
-                    ':new_prompt': [new_prompt_entry],
-                    ':updated_at': datetime.now().isoformat(),
-                    ':ttl': new_ttl
-                },
+                ExpressionAttributeValues=expression_attribute_values,
                 ReturnValues='UPDATED_NEW'
             )
             
@@ -305,9 +328,9 @@ class PendingIntentService:
             logger.info(f"========== UPDATE EXISTING RECORD END ==========")
             return False
     
-    def get_pending_intent(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def get_query_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve the most recent pending intent for a user.
+        Retrieve the most recent query context for a user.
         
         This method checks if previous context exists and is still fresh (within TTL).
         If TTL has expired, returns None even if DynamoDB hasn't deleted the record yet.
@@ -338,35 +361,36 @@ class PendingIntentService:
                 if ttl_timestamp and current_time >= ttl_timestamp:
                     # TTL has expired, treat as if record doesn't exist
                     logger.info(
-                        f"Pending intent found for user {user_id} but TTL expired: "
+                        f"Query context found for user {user_id} but TTL expired: "
                         f"ttl={ttl_timestamp}, now={current_time}, expired_by={current_time - ttl_timestamp}s"
                     )
                     return None
                 
                 logger.info(
-                    f"Found pending intent for user {user_id}: report_type={item.get('report_type')}, "
+                    f"Found query context for user {user_id}: report_type={item.get('report_type')}, "
                     f"updated_at={item.get('updated_at')}, ttl_remaining={ttl_timestamp - current_time}s"
                 )
                 return {
                     'report_type': item.get('report_type'),
                     'slots': item.get('slots', {}),
+                    'comparison_targets': item.get('comparison_targets'),
                     'updated_at': item.get('updated_at'),
                     'timestamp': item.get('timestamp')
                 }
             
-            logger.info(f"No pending intent found for user {user_id} (expired or never existed)")
+            logger.info(f"No query context found for user {user_id} (expired or never existed)")
             return None
             
         except ClientError as e:
-            logger.error(f"Failed to retrieve pending intent for user {user_id}: {e}")
+            logger.error(f"Failed to retrieve query context for user {user_id}: {e}")
             return None
         except Exception as e:
-            logger.exception(f"Unexpected error retrieving pending intent: {e}")
+            logger.exception(f"Unexpected error retrieving query context: {e}")
             return None
     
-    def get_latest_intent(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def get_full_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve the most recent intent and slots for a user.
+        Retrieve the complete query context with full history for a user.
         
         Args:
             user_id: The user's ID
@@ -387,36 +411,37 @@ class PendingIntentService:
             if items:
                 item = items[0]
                 logger.info(
-                    f"Retrieved intent for user {user_id}: {item.get('report_type')}, "
+                    f"Retrieved full context for user {user_id}: {item.get('report_type')}, "
                     f"prompts_count={len(item.get('prompts', []))}"
                 )
                 return {
                     'intent': item.get('report_type'),  # Changed from 'intent' to 'report_type'
                     'slots': item.get('slots', {}),
+                    'comparison_targets': item.get('comparison_targets'),
                     'prompts': item.get('prompts', []),  # Array of prompts
                     'created_at': item.get('created_at'),
                     'updated_at': item.get('updated_at'),
                     'timestamp': item.get('timestamp')
                 }
             
-            logger.info(f"No pending intent found for user {user_id}")
+            logger.info(f"No query context found for user {user_id}")
             return None
             
         except ClientError as e:
-            logger.error(f"Failed to retrieve intent for user {user_id}: {e}")
+            logger.error(f"Failed to retrieve full context for user {user_id}: {e}")
             return None
         except Exception as e:
-            logger.exception(f"Unexpected error retrieving intent: {e}")
+            logger.exception(f"Unexpected error retrieving full context: {e}")
             return None
     
-    def update_slots(
+    def update_context_slots(
         self,
         user_id: str,
         timestamp: int,
         new_slots: Dict[str, Any]
     ) -> bool:
         """
-        Update slots for an existing pending intent.
+        Update slots for an existing query context.
         
         Args:
             user_id: The user's ID
@@ -441,19 +466,19 @@ class PendingIntentService:
                 ReturnValues='UPDATED_NEW'
             )
             
-            logger.info(f"Updated slots for user {user_id}: {new_slots}")
+            logger.info(f"Updated context slots for user {user_id}: {new_slots}")
             return True
             
         except ClientError as e:
-            logger.error(f"Failed to update slots for user {user_id}: {e}")
+            logger.error(f"Failed to update context slots for user {user_id}: {e}")
             return False
         except Exception as e:
-            logger.exception(f"Unexpected error updating slots: {e}")
+            logger.exception(f"Unexpected error updating context slots: {e}")
             return False
     
-    def clear_intent(self, user_id: str) -> bool:
+    def clear_query_context(self, user_id: str) -> bool:
         """
-        Clear the most recent pending intent for a user.
+        Clear the most recent query context for a user.
         
         Called after successfully processing a complete query.
         
@@ -464,11 +489,11 @@ class PendingIntentService:
             bool: True if delete successful, False otherwise
         """
         try:
-            # Get the latest intent first
-            latest = self.get_latest_intent(user_id)
+            # Get the full context first
+            latest = self.get_full_context(user_id)
             
             if not latest:
-                logger.info(f"No intent to clear for user {user_id}")
+                logger.info(f"No context to clear for user {user_id}")
                 return True
             
             # Delete the item
@@ -479,19 +504,19 @@ class PendingIntentService:
                 }
             )
             
-            logger.info(f"Cleared intent for user {user_id}")
+            logger.info(f"Cleared query context for user {user_id}")
             return True
             
         except ClientError as e:
-            logger.error(f"Failed to clear intent for user {user_id}: {e}")
+            logger.error(f"Failed to clear query context for user {user_id}: {e}")
             return False
         except Exception as e:
-            logger.exception(f"Unexpected error clearing intent: {e}")
+            logger.exception(f"Unexpected error clearing query context: {e}")
             return False
     
-    def should_save_intent(self, intent: str, slots: Dict[str, Any]) -> bool:
+    def should_save_context(self, intent: str, slots: Dict[str, Any]) -> bool:
         """
-        Determine if the intent and slots should be saved to DynamoDB.
+        Determine if the query context should be saved to DynamoDB.
         
         Save conditions (OR logic):
         - Intent is success_rate OR failure_rate
@@ -543,12 +568,12 @@ class PendingIntentService:
 
 
 # Singleton instance
-_pending_intent_service = None
+_query_context_service = None
 
 
-def get_pending_intent_service() -> PendingIntentService:
-    """Get the singleton pending intent service instance."""
-    global _pending_intent_service
-    if _pending_intent_service is None:
-        _pending_intent_service = PendingIntentService()
-    return _pending_intent_service
+def get_query_context_service() -> QueryContextService:
+    """Get the singleton query context service instance."""
+    global _query_context_service
+    if _query_context_service is None:
+        _query_context_service = QueryContextService()
+    return _query_context_service

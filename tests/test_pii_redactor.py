@@ -498,3 +498,21 @@ class TestEdgeCases:
         text = "API_KEY=abc123def456ghi789jkl012mno345pqr678uvw901xyz234"
         redacted = redact_pii(text)
         assert "[API_KEY_REDACTED]" in redacted or "API_KEY" in redacted
+
+
+class TestUtilityFunctions:
+    """Test utility functions in pii_redactor module."""
+    
+    def test_redaction_patterns_utility(self):
+        """Test that test_redaction_patterns utility function runs without errors."""
+        from app.security.pii_redactor import test_redaction_patterns
+        
+        # This function prints output but doesn't return anything
+        # Just verify it runs without raising exceptions
+        test_redaction_patterns()
+        # If we get here, the function ran successfully
+        assert True
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

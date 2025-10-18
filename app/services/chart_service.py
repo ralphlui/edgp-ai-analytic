@@ -308,3 +308,154 @@ def generate_analytics_chart(data: dict, chart_type: str = "success_rate", style
         return generator.generate_pie_chart(data)
     else:
         return generator.generate_success_failure_bar_chart(data, chart_type)
+
+
+def generate_comparison_chart(comparison_data: dict) -> Optional[str]:
+    """
+    Generate a comparison chart for multiple targets.
+    
+    Creates a side-by-side bar chart comparing metrics across multiple targets.
+    
+    Args:
+        comparison_data: Comparison data with structure:
+            {
+                "targets": ["customer.csv", "payment.csv"],
+                "metric": "success_rate" or "failure_rate",
+                "winner": "customer.csv",
+                "comparison_details": [
+                    {
+                        "target": "customer.csv",
+                        "metric_value": 95.5,
+                        "total_requests": 1000,
+                        "successful_requests": 955,
+                        "failed_requests": 45
+                    },
+                    ...
+                ]
+            }
+    
+    Returns:
+        Base64-encoded PNG image string, or None if data is invalid
+    
+    Example:
+        >>> chart = generate_comparison_chart(comparison_data)
+        >>> print(f"Chart size: {len(chart)} bytes")
+    """
+    try:
+        # Extract data
+        targets = comparison_data.get("targets", [])
+        metric = comparison_data.get("metric", "success_rate")
+        winner = comparison_data.get("winner")
+        details = comparison_data.get("comparison_details", [])
+        
+        if not targets or not details:
+            logger.warning("No comparison data to chart")
+            return None
+        
+        logger.info(f"Generating comparison chart for {len(targets)} targets")
+        
+        # Create figure and axis
+        fig, ax = plt.subplots(figsize=(12, 6), dpi=100)
+        
+        # Extract data for chart
+        target_names = [d["target"] for d in details]
+        metric_values = [d["metric_value"] for d in details]
+        
+        # Set colors - winner gets green, others get blue
+        colors = ['#10b981' if d["target"] == winner else '#3b82f6' for d in details]
+        
+        # Create bar chart
+        bars = ax.bar(target_names, metric_values, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+        
+        # Add value labels on top of bars
+        for bar, value, detail in zip(bars, metric_values, details):
+            height = bar.get_height()
+            
+            # Add percentage on top
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height,
+                f'{value:.1f}%',
+                ha='center',
+                va='bottom',
+                fontsize=12,
+                fontweight='bold'
+            )
+            
+            # Add request counts inside bar (if tall enough)
+            if height > 10:
+                total = detail["total_requests"]
+                successful = detail["successful_requests"]
+                failed = detail["failed_requests"]
+                
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    height / 2,
+                    f'Total: {total:,}\nSuccess: {successful:,}\nFailed: {failed:,}',
+                    ha='center',
+                    va='center',
+                    fontsize=9,
+                    color='white',
+                    fontweight='bold'
+                )
+        
+        # Add winner indicator
+        if winner:
+            winner_idx = target_names.index(winner)
+            ax.text(
+                winner_idx,
+                metric_values[winner_idx] + 5,
+                '🏆 Winner',
+                ha='center',
+                va='bottom',
+                fontsize=11,
+                fontweight='bold',
+                color='#10b981'
+            )
+        
+        # Customize chart
+        metric_label = metric.replace('_', ' ').title()
+        ax.set_ylabel(f'{metric_label} (%)', fontsize=12, fontweight='bold')
+        ax.set_xlabel('Targets', fontsize=12, fontweight='bold')
+        ax.set_title(
+            f'{metric_label} Comparison\n'
+            f'Comparing {len(targets)} targets',
+            fontsize=14,
+            fontweight='bold',
+            pad=20
+        )
+        
+        # Set y-axis range from 0 to 100 (percentage)
+        ax.set_ylim(0, max(metric_values) * 1.2)
+        
+        # Add grid for better readability
+        ax.yaxis.grid(True, linestyle='--', alpha=0.3)
+        ax.set_axisbelow(True)
+        
+        # Rotate x-axis labels if many targets
+        if len(targets) > 3:
+            plt.xticks(rotation=45, ha='right')
+        
+        # Adjust layout to prevent label cutoff
+        plt.tight_layout()
+        
+        # Convert to base64
+        buffer = BytesIO()
+        plt.savefig(buffer, format='png', bbox_inches='tight', facecolor='white')
+        buffer.seek(0)
+        
+        # Encode to base64
+        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        
+        # Clean up
+        buffer.close()
+        plt.close(fig)
+        
+        logger.info(f"Comparison chart generated successfully ({len(image_base64)} bytes)")
+        
+        return image_base64
+        
+    except Exception as e:
+        logger.exception(f"Error generating comparison chart: {e}")
+        plt.close('all')
+        return None

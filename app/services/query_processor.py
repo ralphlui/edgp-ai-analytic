@@ -5,8 +5,8 @@ import logging
 import time
 from typing import Dict, Any
 
-from app.agents.query_understanding_agent import get_query_understanding_agent
-from app.services.pending_intent_service import get_pending_intent_service
+from app.orchestration.query_understanding_agent import get_query_understanding_agent
+from app.services.query_context_service import get_query_context_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -77,17 +77,20 @@ class QueryProcessor:
             if not user_id :
                 raise ValueError("JWT missing required claims: userid")
 
-            logger.info(f"JWT validated - user: {user_id}")
+            logger.info(f"JWT validated - user:")
+
+            # Get org_id from JWT claims (already validated)
+            org_id = user.get("orgId")
             
             # Extract intent and slots
             logger.info(f"Extracting intent and slots from prompt: '{request.prompt}'")
             agent = get_query_understanding_agent()
             result = await agent.extract_intent_and_slots(request.prompt)
             result = agent.validate_completeness(result)
-            
-            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete}")
-            
-             # Handle out-of-scope queries (non-analytics questions)
+
+            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete},  High Intent: {result.high_level_intent}, Clarification: {result.clarification_needed}, Query Type: {result.query_type}")
+
+            # Handle out-of-scope queries (non-analytics questions)
             if result.clarification_needed is not None:
                 logger.info(f"Out-of-scope query detected: '{request.prompt}'")
                 return {
@@ -97,8 +100,125 @@ class QueryProcessor:
                 }
             # Smart Inheritance Logic: Try to inherit missing fields from previous context
             # This enables natural multi-turn conversations
-            pending_service = get_pending_intent_service()
+            pending_service = get_query_context_service()
+
+            # Check if query_type is 'complex' and handle with planner + executor
+            if result.query_type == 'complex':
+                comparison_targets = result.comparison_targets
+                logger.info(f"Query type is 'complex'. Processing with Planner + Executor")
+                logger.info(f"Comparison targets: {comparison_targets}")
+                
+                # Determine intent for complex query
+                # Priority 1: Use extracted intent if it's success_rate or failure_rate
+                if result.intent in ['success_rate', 'failure_rate']:
+                    report_type = result.intent
+                    logger.info(f"Using extracted intent: {report_type}")
+                else:
+                    # Priority 2: Try to retrieve from previous context
+                    logger.info(f"Intent is '{result.intent}', retrieving from previous context...")
+                    previous_data = pending_service.get_query_context(user_id)
+                    if previous_data and previous_data.get('intent') in ['success_rate', 'failure_rate']:
+                        report_type = previous_data.get('intent')
+                        logger.info(f"Retrieved intent from database: {report_type}")
+                    else:
+                        report_type = ""
+                        logger.warning(f"No valid intent found (current: '{result.intent}', previous: None)")
             
+                # Save context for potential multi-turn conversations
+                saved_data = pending_service.save_query_context(
+                    user_id=user_id,
+                    intent=report_type,
+                    slots=result.slots,
+                    original_prompt=request.prompt,
+                    comparison_targets=comparison_targets
+                )
+
+                # Validate comparison_targets and intent for complex queries
+                has_comparison_targets = saved_data.get('comparison_targets') and len(saved_data.get('comparison_targets')) > 0
+                has_intent = saved_data.get('intent') and saved_data.get('intent') != ''
+
+                if not has_comparison_targets and not has_intent:
+                    # Both missing
+                    return {
+                        "success": False,
+                        "message": "Incomplete comparison query. Please specify:\n1. What to compare (e.g., 'customer.csv and product.csv')\n2. Type of analysis (success rate or failure rate)",
+                        "chart_image": None,
+                    }
+                elif not has_comparison_targets:
+                    # Missing comparison targets
+                    return {
+                        "success": False,
+                        "message": "Missing comparison targets. Please specify which files or domains you want to compare (e.g., 'compare customer.csv and product.csv')",
+                        "chart_image": None,
+                    }
+                elif not has_intent:
+                    # Missing intent
+                    return {
+                        "success": False,
+                        "message": "Missing analysis type. Please specify what you want to analyze (compare success rate or failure rate)",
+                        "chart_image": None,
+                    }
+                
+                # Both present - proceed with planner + executor
+                logger.info("=" * 80)
+                logger.info("COMPLEX QUERY PROCESSING: Step-by-Step Execution")
+                logger.info("=" * 80)
+                
+                try:
+                    # STEP 1: Create execution plan using Planner Agent
+                    logger.info("STEP 1: Invoking Planner Agent to create execution plan")
+                    from app.orchestration.planner_agent import create_execution_plan
+                    
+                    plan = create_execution_plan(
+                        intent=saved_data.get('intent'),
+                        comparison_targets=saved_data.get('comparison_targets'),
+                        user_query=request.prompt,
+                        query_type='comparison'
+                    )
+                    
+                    logger.info(f"Planner created plan: {plan.plan_id}")
+                    logger.info(f"   Plan has {len(plan.steps)} steps")
+                    logger.info(f"   Estimated duration: {plan.metadata.get('estimated_duration', 'unknown')}")
+                    
+                    # STEP 2: Execute plan using Complex Query Executor
+                    logger.info("STEP 2: Invoking Complex Query Executor to execute plan")
+                    from app.orchestration.complex_query_executor import execute_plan
+                    
+                    
+                    result_response = await execute_plan(
+                        plan=plan.dict(),  # Convert Pydantic model to dict
+                        org_id=org_id,
+                        user_query=request.prompt
+                    )
+                    
+                    logger.info("Complex Query Executor completed")
+                    logger.info(f"   Success: {result_response.get('success')}")
+                    logger.info(f"   Has chart: {result_response.get('chart_image') is not None}")
+                    logger.info("=" * 80)
+                    
+                    # OUTPUT VALIDATION: Check for information leaks before returning
+                    is_safe_output, leak_error = validate_llm_output(result_response)
+                    if not is_safe_output:
+                        logger.error(f"Blocked unsafe output for user {user_id}")
+                        logger.error(f"   Leak detected: {leak_error}")
+                        return {
+                            "success": False,
+                            "message": "I apologize, but I cannot provide that information. Please ask about analytics data only.",
+                            "chart_image": None
+                        }
+                    
+                    return result_response
+                    
+                except Exception as e:
+                    logger.exception(f"Complex query processing failed: {e}")
+                    logger.info("=" * 80)
+                    return {
+                        "success": False,
+                        "message": f"I encountered an error while processing your comparison query: {str(e)}",
+                        "chart_image": None
+                    }
+                  
+              
             # Check if we're missing report_type OR target (domain/file)
             has_report_type = result.intent in ['success_rate', 'failure_rate']
             has_domain = result.slots.get('domain_name') and result.slots.get('domain_name') != ''
@@ -106,7 +226,7 @@ class QueryProcessor:
             has_target = has_domain or has_file
             
             # Retrieve previous data first (for conflict detection and inheritance)
-            previous_data = pending_service.get_pending_intent(user_id)
+            previous_data = pending_service.get_query_context(user_id)
             
             # CONFLICT DETECTION: Check if user is switching target types
             if previous_data and has_target:
@@ -122,7 +242,7 @@ class QueryProcessor:
                     
                     # Save the new extraction temporarily with a special marker
                     # This allows us to retrieve it when user confirms
-                    pending_service.save_intent_and_slots(
+                    pending_service.save_query_context(
                         user_id=user_id,
                         intent=result.intent,
                         slots={**result.slots, '_conflict_pending': True},  # Add marker
@@ -142,10 +262,6 @@ class QueryProcessor:
                             f"Which target should I use?\n"
                             f"1️⃣  {curr_target} (new target)\n"
                             f"2️⃣  {prev_target} (previous target)\n\n"
-                            f"💡 **Quick responses**:\n"
-                            f"   • Type '1' or 'use file' for option 1\n"
-                            f"   • Type '2' or 'use domain' for option 2\n"
-                            f"   • Or just tell me what to analyze next!"
                         ),
                         "chart_image": None,
                     }
@@ -183,7 +299,7 @@ class QueryProcessor:
                             
                             # Need to retrieve the record before the conflict
                             # For now, clear the conflict and ask user to re-specify
-                            pending_service.clear_intent(user_id)
+                            pending_service.clear_query_context(user_id)
                             
                             return {
                                 "success": False,
@@ -248,7 +364,7 @@ class QueryProcessor:
             logger.info(f"   - Slots (after inheritance): {result.slots}")
             logger.info(f"   - Is complete (after inheritance): {result.is_complete}")
             
-            should_save = pending_service.should_save_intent(result.intent, result.slots)
+            should_save = pending_service.should_save_context(result.intent, result.slots)
             logger.info(f"Should save result: {should_save}")
             
             saved_data = None
@@ -259,7 +375,7 @@ class QueryProcessor:
                 logger.info(f"   - slots: {result.slots}")
                 logger.info(f"   - prompt: '{request.prompt}'")
                 
-                saved_data = pending_service.save_intent_and_slots(
+                saved_data = pending_service.save_query_context(
                     user_id=user_id,
                     intent=result.intent,
                     slots=result.slots,
@@ -294,11 +410,11 @@ class QueryProcessor:
                 if not has_report_type and not has_target:
                     # Missing both report type and target
                     error_message = (
-                        "⚠️ Missing Information: I need both the analysis type and target to proceed.\n\n"
+                        "Missing Information: I need both the analysis type and target to proceed.\n\n"
                         "Please specify:\n"
                         "1. Analysis type: 'success rate' or 'failure rate'\n"
-                        "2. Target: a domain name (e.g., 'example.com') or file name (e.g., 'test.py')\n\n"
-                        "Example: 'Show me the success rate for example.com'"
+                        "2. Target: a domain name (e.g., 'customer domain') or file name (e.g., 'customer.csv')\n\n"
+                        "Example: 'Show me the success rate for customer domain'"
                     )
                     missing_fields = ["report_type", "target"]
                     
@@ -307,7 +423,7 @@ class QueryProcessor:
                     target = result.slots.get('domain_name') or result.slots.get('file_name')
                     target_type = "domain" if has_domain else "file"
                     error_message = (
-                        f"⚠️ Missing Analysis Type: I see you want to analyze {target_type} '{target}', "
+                        f"Missing Analysis Type: I see you want to analyze {target_type} '{target}', "
                         f"but I need to know what type of analysis.\n\n"
                         f"Please specify:\n"
                         f"- 'success rate' - to see successful operations\n"
@@ -320,7 +436,7 @@ class QueryProcessor:
                     # Missing only target (has report type)
                     analysis_type = result.intent.replace('_', ' ')
                     error_message = (
-                        f"⚠️ Missing Target: I understand you want {analysis_type} analysis, "
+                        f"Missing Target: I understand you want {analysis_type} analysis, "
                         f"but I need to know what to analyze.\n\n"
                         f"Please specify:\n"
                         f"- A domain name (e.g., 'customer domain')\n"
@@ -339,7 +455,7 @@ class QueryProcessor:
             # Call analytics orchestrator - coordinates tool execution, chart generation, and response
             logger.info(f"Calling analytics orchestrator")
             
-            from app.agents.analytics_workflow_agent import run_analytics_query
+            from app.orchestration.simple_query_executor import run_analytics_query
             
             try:
                 # Build extracted data for workflow
@@ -358,7 +474,8 @@ class QueryProcessor:
                 # Run workflow - LLM uses report_type if provided, otherwise analyzes query
                 response = await run_analytics_query(
                     user_query=request.prompt,
-                    extracted_data=extracted_data
+                    extracted_data=extracted_data,
+                    org_id=org_id
                 )
                 
                 logger.info(f"Workflow completed successfully")

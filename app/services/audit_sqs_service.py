@@ -176,7 +176,7 @@ class AuditSQSService:
         if not success and message:
             activity_description += f" - Error: {message[:100]}"
         
-            return self.send_audit_log(
+        return self.send_audit_log(
             statusCode=statusCode,
             user_id=user_id,
             username=username,

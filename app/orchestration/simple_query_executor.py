@@ -15,7 +15,7 @@ Benefits:
 - Easier maintenance (clear separation of concerns)
 """
 import logging
-from typing import TypedDict, Literal
+from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from app.config import OPENAI_API_KEY, OPENAI_MODEL
@@ -32,6 +32,7 @@ class AnalyticsState(TypedDict):
     """State for analytics workflow."""
     user_query: str
     extracted_data: dict  # {report_type, domain_name, file_name}
+    org_id: str  # Organization ID for multi-tenant data isolation
     tool_result: dict  # Raw data from tools
     chart_image: str  # Base64 chart image (plain base64 string or None)
     final_response: dict  # Structured response: {success, message, chart_image}
@@ -63,6 +64,12 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     # Get analytics tools
     from app.tools.analytics_tools import get_analytics_tools
     tools = get_analytics_tools()
+    
+    # HYBRID APPROACH: LLM-first with deterministic fallback
+    # Strategy 1: Always try LLM first (most flexible)
+    # Strategy 2: If LLM fails, use deterministic fallback (most reliable)
+    
+    logger.info(f"🤖 Attempting LLM tool selection first...")
     
     # Create LLM with tool calling capability
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
@@ -201,6 +208,12 @@ Select the appropriate analytics tool and call it with the correct parameters.""
             logger.info(f"LLM selected tool: {tool_name}")
             logger.info(f"Tool arguments: {tool_args}")
             
+            # Add org_id to tool arguments for multi-tenant support
+            org_id = state.get("org_id")
+            if org_id:
+                tool_args["org_id"] = org_id
+                logger.info(f"Added org_id to tool args: {org_id}")
+            
             # Execute the selected tool
             for tool in tools:
                 if tool.name == tool_name:
@@ -226,24 +239,100 @@ Select the appropriate analytics tool and call it with the correct parameters.""
                 }
             }
         else:
-            # LLM didn't call any tool - this shouldn't happen with proper tools
-            logger.warning("LLM did not call any tool")
+            # LLM didn't call any tool - use deterministic fallback
+            logger.warning("LLM did not call any tool, falling back to deterministic selection")
             logger.warning(f"LLM response: {response.content}")
-            return {
-                "tool_result": {
-                    "success": False,
-                    "error": "Could not determine which analytics tool to use"
-                }
-            }
+            
+            # FALLBACK: Use deterministic selection
+            return _deterministic_fallback(state, tools, report_type, domain_name, file_name)
             
     except Exception as e:
         logger.exception(f"Error in LLM tool selection: {e}")
+        logger.info("Falling back to deterministic selection due to LLM error")
+        
+        # FALLBACK: Use deterministic selection
+        return _deterministic_fallback(state, tools, report_type, domain_name, file_name)
+
+
+def _deterministic_fallback(state: AnalyticsState, tools: list, report_type: str, domain_name: str, file_name: str) -> dict:
+    """
+    Deterministic fallback when LLM fails to select a tool.
+    
+    Priority:
+    1. If report_type provided → Use it directly
+    2. If target provided → Default to success_rate
+    3. Otherwise → Return error
+    """
+    logger.info("🔧 Using deterministic fallback selection")
+    
+    # Fallback 1: If report_type is explicitly provided → Use it directly
+    if report_type and (domain_name or file_name):
+        logger.info(f"Fallback: Using report_type={report_type}")
+        
+        # Map report_type to tool
+        tool_map = {
+            "success_rate": "generate_success_rate_report",
+            "failure_rate": "generate_failure_rate_report"
+        }
+        
+        tool_name = tool_map.get(report_type)
+        if tool_name:
+            # Build tool arguments
+            tool_args = {}
+            if domain_name:
+                tool_args["domain_name"] = domain_name
+            if file_name:
+                tool_args["file_name"] = file_name
+            
+            # Add org_id
+            org_id = state.get("org_id")
+            if org_id:
+                tool_args["org_id"] = org_id
+            
+            logger.info(f"Fallback selection: {tool_name} with args {tool_args}")
+            
+            # Execute tool directly
+            for tool in tools:
+                if tool.name == tool_name:
+                    result = tool.invoke(tool_args)
+                    logger.info(f"Tool execution complete: success={result.get('success')}")
+                    
+                    # Store report_type in result
+                    if "data" in result and isinstance(result["data"], dict):
+                        result["data"]["_report_type"] = report_type
+                    
+                    return {"tool_result": result}
+    
+    # Fallback 2: If target provided but no report_type → Ask for clarification
+    elif domain_name or file_name:
+        logger.warning(f"Fallback: No report_type specified, asking user for clarification")
+        
+        target = domain_name or file_name
+        target_type = "domain" if domain_name else "file"
+        
         return {
             "tool_result": {
                 "success": False,
-                "error": f"Tool selection failed: {str(e)}"
+                "needs_clarification": True,
+                "message": f"I found the {target_type} '{target}', but I need to know what you'd like to analyze. Would you like to see:\n\n"
+                          f"1. **Success rate** - How often requests succeed\n"
+                          f"2. **Failure rate** - How often requests fail\n\n"
+                          f"Please specify which analysis you'd prefer.",
+                "suggested_queries": [
+                    f"Show me success rate for {target}",
+                    f"Show me failure rate for {target}"
+                ]
             }
         }
+    
+    # Fallback 3: No valid parameters → Return error
+    logger.error("Fallback failed: No valid parameters for tool selection")
+    return {
+        "tool_result": {
+            "success": False,
+            "error": "I couldn't determine what you'd like to analyze. Please provide more details about what analytics you need."
+        }
+    }
 
 
 def generate_chart_node(state: AnalyticsState) -> dict:
@@ -413,7 +502,7 @@ def build_analytics_orchestrator() -> StateGraph:
 
 
 # Example usage
-async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
+async def run_analytics_query(user_query: str, extracted_data: dict, org_id: Optional[str] = None) -> dict:
     """
     Run analytics query through orchestrator with hybrid tool selection.
     
@@ -433,6 +522,7 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
             domain_name?: str | None,
             file_name?: str | None
         }
+        org_id: Organization ID for multi-tenant data isolation (from JWT)
     
     Returns:
         Structured response dictionary:
@@ -470,6 +560,7 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     initial_state = {
         "user_query": user_query,
         "extracted_data": extracted_data,
+        "org_id": org_id or "",  # Pass org_id through state
         "tool_result": {},
         "chart_image": None,
         "final_response": {}
@@ -477,6 +568,8 @@ async def run_analytics_query(user_query: str, extracted_data: dict) -> dict:
     
     logger.info(f"Starting orchestrator for: {user_query}")
     logger.info(f"Extracted parameters: {extracted_data}")
+    if org_id:
+        logger.info(f"Organization ID: {org_id}")
     
     # Run orchestrator - LLM will select appropriate tool
     final_state = await orchestrator.ainvoke(initial_state)
@@ -505,9 +598,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -527,9 +620,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -549,9 +642,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -571,9 +664,9 @@ if __name__ == "__main__":
             }
         )
         
-        print(f"\n✅ Success: {response['success']}")
-        print(f"📝 Message:\n{response['message']}\n")
-        print(f"📊 Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
+        print(f"\nSuccess: {response['success']}")
+        print(f"Message:\n{response['message']}\n")
+        print(f"Chart: {'Available ✓' if response['chart_image'] else 'Not available ✗'}")
         if response['chart_image']:
             print(f"   Chart size: {len(response['chart_image'])} chars")
         print()
@@ -584,4 +677,4 @@ if __name__ == "__main__":
     asyncio.run(test_failure_rate())
     asyncio.run(test_multiturn())
     asyncio.run(test_natural())
-    print("\n" + "✅ All Tests Complete".center(60, "=") + "\n")
+    print("\n" + "All Tests Complete".center(60, "=") + "\n")

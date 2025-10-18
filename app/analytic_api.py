@@ -134,3 +134,109 @@ async def receive_userprompt(
             "message": "An unexpected error occurred",
             "chart_image": None
         }
+
+
+@app.delete("/api/analytics/conversation/clear")
+async def clear_conversation_history(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
+) -> Dict[str, Any]:
+    """
+    Clear conversation history (context) for the authenticated user.
+    
+    This endpoint removes all stored conversation context including:
+    - report_type (success_rate/failure_rate)
+    - domain_name and file_name
+    - comparison_targets
+    - prompt history
+    
+    Use this when:
+    - User wants to start a fresh conversation
+    - Context is incorrect or stale
+    - User is switching to a different analysis topic
+    
+    Returns:
+        Dict containing success status and message
+        
+    Example:
+        DELETE /api/analytics/conversation/clear
+        Headers: Authorization: Bearer <token>
+        
+        Response:
+        {
+            "success": true,
+            "message": "Conversation history cleared successfully"
+        }
+    """
+    try:
+        # Validate JWT and extract user info
+        jwt_payload = validate_jwt_token(credentials)
+        user_id = jwt_payload.get("sub")
+        username = jwt_payload.get("userName") or jwt_payload.get("email", "").split("@")[0]
+        
+        if not user_id:
+            logger.warning("User ID not found in JWT token")
+            return {
+                "success": False,
+                "message": "Invalid authentication token"
+            }
+        
+        # Get query context service
+        from app.services.query_context_service import QueryContextService
+        context_service = QueryContextService()
+        
+        # Clear the conversation context
+        success = context_service.clear_query_context(user_id)
+        
+        if success:
+            logger.info(f"Conversation history cleared for user: {username} (ID: {user_id})")
+            
+            # Send audit log
+            audit_service = get_audit_sqs_service()
+            audit_service.send_analytics_query_audit(
+                statusCode=200,
+                user_id=user_id,
+                username=username,
+                prompt="[CLEAR_CONVERSATION_HISTORY]",
+                success=True,
+                message="Conversation history cleared"
+            )
+            
+            return {
+                "success": True,
+                "message": "Conversation history cleared successfully"
+            }
+        else:
+            logger.warning(f"Failed to clear conversation history for user: {username} (ID: {user_id})")
+            return {
+                "success": False,
+                "message": "Failed to clear conversation history"
+            }
+    
+    except HTTPException as http_exc:
+        # Re-raise HTTP exceptions (like 401 from validate_jwt_token)
+        raise http_exc
+        
+    except Exception as e:
+        logger.exception(f"Unexpected error clearing conversation history: {e}")
+        
+        # Try to send audit log
+        try:
+            user_id = jwt_payload.get("sub") if 'jwt_payload' in locals() else None
+            username = jwt_payload.get("userName") if 'jwt_payload' in locals() else "unknown"
+            
+            audit_service = get_audit_sqs_service()
+            audit_service.send_analytics_query_audit(
+                statusCode=500,
+                user_id=user_id or "unknown",
+                username=username,
+                prompt="[CLEAR_CONVERSATION_HISTORY]",
+                success=False,
+                message=str(e)
+            )
+        except:
+            pass
+        
+        return {
+            "success": False,
+            "message": "An unexpected error occurred"
+        }

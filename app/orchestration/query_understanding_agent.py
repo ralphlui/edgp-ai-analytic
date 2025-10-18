@@ -25,6 +25,9 @@ class QueryUnderstandingResult(BaseModel):
     missing_required: List[str] = Field(default_factory=list, description="List of required slots that are missing")
     is_complete: bool = Field(False, description="Whether query has all required information")
     clarification_needed: Optional[str] = Field(None, description="What to ask user if incomplete")
+    query_type: Optional[str] = Field(None, description="Type of query: 'simple' or 'complex'")
+    high_level_intent: Optional[str] = Field(None, description="High-level intent for complex queries: 'comparison', 'aggregation', etc.")
+    comparison_targets: List[str] = Field(default_factory=list, description="List of targets for comparison queries")
 
 
 class QueryUnderstandingAgent:
@@ -45,12 +48,24 @@ class QueryUnderstandingAgent:
 Your task is to extract:
 1. **INTENT** - What type of analysis does the user want?
 2. **SLOTS** - What specific entities/parameters are mentioned?
+3. **QUERY TYPE** - Is this a simple or complex query?
+4. **COMPARISON TARGETS** - For comparison queries, list all targets being compared
 
 📋 **SUPPORTED INTENTS:**
 - "success_rate" - User wants to see success rates
 - "failure_rate" - User wants to see failure rates
+- "comparison" - User wants to compare metrics between multiple targets (when metric type not specified)
 - "general_query" - General analytics question or unclear request
 - "out_of_scope" - Non-analytics question (greetings, chitchat, unrelated topics)
+
+📊 **QUERY TYPES:**
+- "simple" - Single target analysis (one domain or file)
+- "complex" - Multi-target analysis (comparisons, aggregations)
+
+🎯 **HIGH-LEVEL INTENTS (for complex queries):**
+- "comparison" - Comparing metrics between multiple targets
+- "aggregation" - Combining data from multiple sources
+- "trend" - Analyzing trends over time
 
 🎯 **SUPPORTED SLOTS:**
 - domain_name: Domain to analyze (e.g., "customer", "product", "order")
@@ -58,40 +73,76 @@ Your task is to extract:
 
 ⚠️ **CRITICAL RULES:**
 
-1. **Intent Detection:**
-   - Keywords "success", "successful" → intent: "success_rate"
-   - Keywords "fail", "failure", "failed", "error" → intent: "failure_rate"
+1. **Intent Detection (HIGHEST PRIORITY - CHECK THESE FIRST):**
+   - If query contains "failure" OR "failed" OR "fail" OR "error" OR "failure rate" → intent: "failure_rate"
+   - If query contains "success" OR "successful" OR "success rate" → intent: "success_rate"
+   - Examples that MUST be "failure_rate":
+     * "I want to generate failure rate report"
+     * "create failure rate report"
+     * "show me failure rate"
+     * "failure rate for customer"
+   - Examples that MUST be "success_rate":
+     * "I want to generate success rate report"
+     * "create success rate report"
+     * "show me success rate"
+     * "success rate for customer"
+   - Keywords "compare", "comparison", "vs", "versus" WITHOUT explicit metric → intent: "comparison"
+   - Keywords "compare" WITH "success" → intent: "success_rate"
+   - Keywords "compare" WITH "fail/failure/error" → intent: "failure_rate"
    - Greetings, chitchat, or non-analytics questions → intent: "out_of_scope"
-   - Analytics-related but unclear → intent: "general_query"
+   - Generic "generate report" OR "analytics" WITHOUT any metric keyword → intent: "general_query"
 
-2. **Out of Scope Detection:**
+2. **Query Type Detection:**
+   - Keywords "compare", "between", "vs", "versus" → query_type: "complex", high_level_intent: "comparison"
+   - Multiple targets mentioned (e.g., "customer.csv and product.csv") → query_type: "complex"
+   - Single target → query_type: "simple"
+
+3. **Comparison Target Extraction:**
+   - Extract ALL files or domains mentioned in comparison queries
+   - Format: Preserve exact names as mentioned (e.g., "customer.csv", "product.csv")
+   - Store in comparison_targets array
+   - For "file" without extension, add ".csv" (e.g., "customer file" → "customer.csv")
+   - For "domain" without extension, store without extension (e.g., "customer domain" → "customer")
+   - Mixed comparisons allowed: domain vs file (e.g., ["customer", "payment.csv"])
+   - Domain vs domain: both without extension (e.g., ["customer", "payment"])
+   - File vs file: both with extension (e.g., ["customer.csv", "payment.csv"])
+
+4. **Out of Scope Detection:**
    - Greetings: "hello", "hi", "hey", "good morning"
    - Personal questions: "how are you", "what's your name", "who are you"
    - Unrelated topics: "weather", "sports", "news", "recipes"
    - Chitchat: "tell me a joke", "what can you do", "help"
    - When detected, set intent to "out_of_scope" and clarification_needed with helpful redirect
 
-3. **Slot Extraction:**
+5. **Slot Extraction:**
    - File extensions (.csv, .json, .xlsx) → extract as file_name
    - Domain names without extension → extract as domain_name
+   - For complex queries, also populate comparison_targets
 
-4. **Required Slots per Intent:**
-   - success_rate/failure_rate REQUIRES: domain_name OR file_name
+6. **Required Slots per Intent:**
+   - success_rate/failure_rate (simple) REQUIRES: domain_name OR file_name
+   - success_rate/failure_rate (complex comparison) REQUIRES: comparison_targets (at least 2)
+   - comparison (complex) REQUIRES: comparison_targets (at least 2)
    - general_query: May have partial information
    - out_of_scope: No slots required
 
-5. **Validation:**
+7. **Validation:**
    - Check if all required slots are present
    - If missing, specify what's needed in "clarification_needed"
    - Set "is_complete" to true only if all required slots are present
    - For out_of_scope, always set is_complete=true (complete but not actionable)
 
-📊 **EXAMPLES:**
+**EXAMPLES:**
+
+**SIMPLE QUERIES:**
 
 Input: "show me success rate for customer.csv"
 Output: {
   "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {"file_name": "customer.csv"},
+  "comparison_targets": [],
   "confidence": 0.95,
   "missing_required": [],
   "is_complete": true,
@@ -101,9 +152,41 @@ Output: {
 Input: "failure rate for customer domain"
 Output: {
   "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {"domain_name": "customer"},
+  "comparison_targets": [],
   "confidence": 0.9,
   "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "I want to generate failure rate report"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {},
+  "comparison_targets": [],
+  "confidence": 0.85,
+  "missing_required": ["domain_name or file_name"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want a failure rate report. Which file or domain would you like to analyze? (e.g., 'customer.csv' or 'customer domain')"
+}
+
+Input: "generate success rate report for payment"
+Output: {
+  "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"domain_name": "payment"},
+  "comparison_targets": [],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
   "is_complete": true,
   "clarification_needed": null
 }
@@ -111,18 +194,157 @@ Output: {
 Input: "show me success rate"
 Output: {
   "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {},
+  "comparison_targets": [],
   "confidence": 0.8,
   "missing_required": ["domain_name or file_name"],
   "is_complete": false,
   "clarification_needed": "I need to know which file or domain to analyze. Please specify a file name (e.g., 'customer.csv') or domain name (e.g., 'customer domain')."
 }
 
+Input: "show me failure or fail rate"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {},
+  "comparison_targets": [],
+  "confidence": 0.8,
+  "missing_required": ["domain_name or file_name"],
+  "is_complete": false,
+  "clarification_needed": "I need to know which file or domain to analyze. Please specify a file name (e.g., 'customer.csv') or domain name (e.g., 'customer domain')."
+}
+
+**COMPLEX COMPARISON QUERIES (COMPLETE):**
+
+Input: "Compare failure rates between customer.csv and product.csv"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv", "product.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Compare failure rates between customer file and product file"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv", "product.csv"],
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "compare success rate for customer.csv vs payment.csv"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv", "payment.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "compare success rate for customer domain vs payment.csv"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer", "payment.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "compare success rate for customer domain vs payment domain"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer", "payment"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "compare customer.csv and product domain"
+Output: {
+  "intent": "comparison",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv", "product"],
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": false,
+  "clarification_needed": "I see you want to compare customer.csv and product. What type of analysis would you like? (success rate or failure rate)"
+}
+
+Input: "compare failure rate between customer.csv and product domain"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv", "product"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+**COMPLEX COMPARISON QUERIES (INCOMPLETE):**
+
+Input: "Compare failure rates between customer.csv"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": ["customer.csv"],
+  "confidence": 0.7,
+  "missing_required": ["second_comparison_target"],
+  "is_complete": false,
+  "clarification_needed": "I see you want to compare failure rates for customer.csv. What would you like to compare it with? Please specify another file or domain."
+}
+
+Input: "compare success rates"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {},
+  "comparison_targets": [],
+  "confidence": 0.6,
+  "missing_required": ["comparison_targets"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want to compare success rates. Please specify which files or domains to compare (e.g., 'compare success rates between customer.csv and product.csv')."
+}
 
 Input: "customer.csv"
 Output: {
   "intent": "",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {"file_name": "customer.csv"},
+  "comparison_targets": [],
   "confidence": 0.8,
   "missing_required": ["intent"],
   "is_complete": false,
@@ -132,17 +354,23 @@ Output: {
 Input: "customer domain"
 Output: {
   "intent": "",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {"domain_name": "customer"},
+  "comparison_targets": [],
   "confidence": 0.8,
   "missing_required": ["intent"],
   "is_complete": false,
   "clarification_needed": null
 }
 
-Input: "generate a report or give me analytics report"
+Input: "generate a report"
 Output: {
   "intent": "general_query",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {},
+  "comparison_targets": [],
   "confidence": 0.6,
   "missing_required": ["report_type", "target"],
   "is_complete": false,
@@ -152,7 +380,10 @@ Output: {
 Input: "hello"
 Output: {
   "intent": "out_of_scope",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {},
+  "comparison_targets": [],
   "confidence": 0.95,
   "missing_required": [],
   "is_complete": true,
@@ -162,7 +393,10 @@ Output: {
 Input: "what's the weather today?"
 Output: {
   "intent": "out_of_scope",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {},
+  "comparison_targets": [],
   "confidence": 0.9,
   "missing_required": [],
   "is_complete": true,
@@ -172,7 +406,10 @@ Output: {
 Input: "tell me a joke"
 Output: {
   "intent": "out_of_scope",
+  "query_type": "simple",
+  "high_level_intent": null,
   "slots": {},
+  "comparison_targets": [],
   "confidence": 0.95,
   "missing_required": [],
   "is_complete": true,
@@ -259,6 +496,8 @@ Return ONLY valid JSON matching the QueryUnderstandingResult schema. No addition
             Updated result with validation information
         """
         intent = result.intent
+        query_type = result.query_type or "simple"
+        high_level_intent = result.high_level_intent
         result.clarification_needed = None
         
         # Handle out_of_scope intent - always complete but not actionable

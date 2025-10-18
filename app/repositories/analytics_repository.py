@@ -45,13 +45,15 @@ class AnalyticsRepository:
     
     def get_success_rate_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate success rate for a specific domain.
         
         Args:
             domain_name: The domain to analyze (e.g., "customer", "product", "location", "vendor")
+            org_id: Organization ID for multi-tenant data isolation (optional)
         
         Returns:
             Dictionary containing:
@@ -66,7 +68,7 @@ class AnalyticsRepository:
         
         
         # Query DynamoDB using GSI
-        items = self._query_by_domain(domain_name)
+        items = self._query_by_domain(domain_name, org_id=org_id)
         
         # Calculate metrics
         metrics = self._calculate_metrics(items)
@@ -90,12 +92,14 @@ class AnalyticsRepository:
     def get_success_rate_by_file(
         self,
         file_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate success rate for a specific file.
         
         Args:
             file_name: The file to analyze (e.g., "customer.csv")
+            org_id: Organization ID for multi-tenant data isolation (optional)
         Returns:
             Dictionary containing analytics metrics (same structure as domain query)
         """
@@ -103,7 +107,7 @@ class AnalyticsRepository:
         
         
         # Query DynamoDB using GSI
-        items = self._query_by_file(file_name)
+        items = self._query_by_file(file_name, org_id=org_id)
 
         # Calculate metrics
         metrics = self._calculate_metrics(items)
@@ -126,20 +130,22 @@ class AnalyticsRepository:
     
     def get_failure_rate_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate failure rate for a specific domain.
         
         Args:
             domain_name: The domain to analyze
+            org_id: Organization ID for multi-tenant data isolation (optional)
         Returns:
             Dictionary containing failure rate metrics
         """
         logger.info(f"Querying failure rate for domain: {domain_name}")
         
         # Get success rate data first
-        success_data = self.get_success_rate_by_domain(domain_name)
+        success_data = self.get_success_rate_by_domain(domain_name, org_id=org_id)
         
         # Calculate failure rate (inverse of success rate)
         failure_rate = 100.0 - success_data["success_rate"]
@@ -159,13 +165,15 @@ class AnalyticsRepository:
     
     def get_failure_rate_by_file(
         self,
-        file_name: str
+        file_name: str,
+        org_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Calculate failure rate for a specific file.
         
         Args:
             file_name: The file to analyze
+            org_id: Organization ID for multi-tenant data isolation (optional)
         
         Returns:
             Dictionary containing failure rate metrics
@@ -173,7 +181,7 @@ class AnalyticsRepository:
         logger.info(f"Querying failure rate for file: {file_name}")
         
         # Get success rate data first
-        success_data = self.get_success_rate_by_file(file_name)
+        success_data = self.get_success_rate_by_file(file_name, org_id=org_id)
         
         # Calculate failure rate
         failure_rate = 100.0 - success_data["success_rate"]
@@ -195,25 +203,33 @@ class AnalyticsRepository:
     
     def _query_by_domain(
         self,
-        domain_name: str
+        domain_name: str,
+        org_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Scan DynamoDB for events by domain name (no GSI required).
         
         Args:
             domain_name: Domain to query
+            org_id: Organization ID for multi-tenant filtering (optional)
         Returns:
             List of items from DynamoDB
         """  
-        logger.info(f"Scanning DynamoDB table '{self.table_name}' for domain: {domain_name}")
+        # Convert domain_name to lowercase for case-insensitive search
+        domain_name_lower = domain_name.lower()
+        logger.info(f"Scanning DynamoDB table '{self.table_name}' for domain: {domain_name_lower} (original: {domain_name})")
         items = []
         
         try:
+            # Build filter expression with optional org_id filtering
+            filter_expr = Attr('domain_name').eq(domain_name_lower)
+            if org_id:
+                filter_expr = filter_expr & Attr('organization_id').eq(org_id)
+                logger.info(f"Filtering by organization_id: {org_id}")
+
             # Use scan with filter expression (no GSI required)
             logger.info(f"Using SCAN with FilterExpression (no GSI)")
-            response = self.table.scan(
-                FilterExpression=Attr('domain_name').eq(domain_name)
-            )
+            response = self.table.scan(FilterExpression=filter_expr)
             
             items.extend(response.get('Items', []))
             logger.info(f"First page retrieved: {len(items)} items")
@@ -222,7 +238,7 @@ class AnalyticsRepository:
             while 'LastEvaluatedKey' in response:
                 logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
-                    FilterExpression=Attr('domain_name').eq(domain_name),
+                    FilterExpression=filter_expr,
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))
@@ -235,11 +251,11 @@ class AnalyticsRepository:
                 logger.info(f"Sample item fields: {list(first_item.keys())}")
                 logger.info(f"Sample item final_status: {first_item.get('final_status')}")
             else:
-                logger.warning(f"No items found for domain: {domain_name}")
+                logger.warning(f"No items found for domain: {domain_name_lower}")
             
         except Exception as e:
             logger.exception(f"Error scanning DynamoDB: {e}")
-            logger.error(f"Table: {self.table_name}, Domain: {domain_name}")
+            logger.error(f"Table: {self.table_name}, Domain: {domain_name_lower}")
             # Return empty list on error
             return []
         
@@ -247,7 +263,8 @@ class AnalyticsRepository:
     
     def _query_by_file(
         self,
-        file_name: str
+        file_name: str,
+        org_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Query DynamoDB for events by file name.
@@ -255,37 +272,45 @@ class AnalyticsRepository:
         
         Args:
             file_name: File to query
+            org_id: Organization ID for multi-tenant filtering (optional)
         Returns:
             List of items from DynamoDB
         """
-        logger.info(f"Querying for file: {file_name}")
+        # Convert file_name to lowercase for case-insensitive search
+        file_name_lower = file_name.lower()
+        logger.info(f"Querying for file: {file_name_lower} (original: {file_name})")
 
         items = []
         
         try:
             # Step 1: Get file_id from header table using file_name
-            logger.info(f"Step 1: Looking up file_id from header table for file_name: {file_name}")
+            logger.info(f"Step 1: Looking up file_id from header table for file_name: {file_name_lower}")
             header_response = self.header_table.scan(
-                FilterExpression=Attr('file_name').eq(file_name)
+                FilterExpression=Attr('file_name').eq(file_name_lower)
             )
             
             header_items = header_response.get('Items', [])
             if not header_items:
-                logger.warning(f"No file_id found in header table for file_name: {file_name}")
+                logger.warning(f"No file_id found in header table for file_name: {file_name_lower}")
                 return []
             
             file_id = header_items[0].get('id')
             if not file_id:
-                logger.error(f"Header record found but 'id' field is missing for file_name: {file_name}")
+                logger.error(f"Header record found but 'id' field is missing for file_name: {file_name_lower}")
                 return []
             
-            logger.info(f"Resolved file_name '{file_name}' -> file_id '{file_id}'")
+            logger.info(f"Resolved file_name '{file_name_lower}' -> file_id '{file_id}'")
             
             # Step 2: Query tracker table using file_id and get final_status
             logger.info(f"Step 2: Scanning tracker table for file_id: {file_id}")
-            response = self.table.scan(
-                FilterExpression=Attr('file_id').eq(file_id)
-            )
+            
+            # Build filter expression with optional org_id filtering
+            filter_expr = Attr('file_id').eq(file_id)
+            if org_id:
+                filter_expr = filter_expr & Attr('organization_id').eq(org_id)
+                logger.info(f"Filtering by organization_id: {org_id}")
+
+            response = self.table.scan(FilterExpression=filter_expr)
             
             items.extend(response.get('Items', []))
             logger.info(f"First page retrieved: {len(items)} items")
@@ -294,7 +319,7 @@ class AnalyticsRepository:
             while 'LastEvaluatedKey' in response:
                 logger.info(f"Fetching next page (current items: {len(items)})")
                 response = self.table.scan(
-                    FilterExpression=Attr('file_id').eq(file_id),
+                    FilterExpression=filter_expr,
                     ExclusiveStartKey=response['LastEvaluatedKey']
                 )
                 items.extend(response.get('Items', []))
@@ -312,7 +337,7 @@ class AnalyticsRepository:
             
         except Exception as e:
             logger.exception(f"Error querying DynamoDB: {e}")
-            logger.error(f"Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name}")
+            logger.error(f"Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name_lower}")
             # Return empty list on error
             return []
         
