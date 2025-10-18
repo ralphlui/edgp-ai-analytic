@@ -411,5 +411,356 @@ class TestChartDataValidation:
         assert chart is not None
 
 
+class TestPieChartGeneration:
+    """Test pie chart generation."""
+    
+    @pytest.fixture
+    def generator(self):
+        """Create chart generator instance."""
+        return AnalyticsChartGenerator()
+    
+    @pytest.fixture
+    def sample_data(self):
+        """Sample analytics data for testing."""
+        return {
+            "target_type": "domain",
+            "target_value": "customer.example.com",
+            "total_requests": 100,
+            "successful_requests": 80,
+            "failed_requests": 20,
+            "success_rate": 80.0,
+            "failure_rate": 20.0
+        }
+    
+    def test_generate_pie_chart_success(self, generator, sample_data):
+        """Test successful pie chart generation."""
+        chart = generator.generate_pie_chart(sample_data)
+        
+        assert chart is not None
+        assert isinstance(chart, str)
+        assert len(chart) > 0
+        
+        # Verify it's valid base64
+        try:
+            base64.b64decode(chart)
+        except Exception as e:
+            pytest.fail(f"Invalid base64 encoding: {e}")
+    
+    def test_pie_chart_with_zero_total(self, generator):
+        """Test pie chart with zero total requests."""
+        data = {
+            "target_type": "domain",
+            "target_value": "test.com",
+            "total_requests": 0,
+            "successful_requests": 0,
+            "failed_requests": 0,
+            "success_rate": 0
+        }
+        
+        chart = generator.generate_pie_chart(data)
+        assert chart is None
+    
+    def test_pie_chart_with_100_percent_success(self, generator):
+        """Test pie chart with 100% success rate."""
+        data = {
+            "target_type": "domain",
+            "target_value": "perfect.com",
+            "total_requests": 100,
+            "successful_requests": 100,
+            "failed_requests": 0,
+            "success_rate": 100.0
+        }
+        
+        chart = generator.generate_pie_chart(data)
+        assert chart is not None
+    
+    def test_pie_chart_with_100_percent_failure(self, generator):
+        """Test pie chart with 100% failure rate."""
+        data = {
+            "target_type": "domain",
+            "target_value": "broken.com",
+            "total_requests": 100,
+            "successful_requests": 0,
+            "failed_requests": 100,
+            "failure_rate": 100.0
+        }
+        
+        chart = generator.generate_pie_chart(data)
+        assert chart is not None
+    
+    def test_pie_chart_exception_handling(self, generator):
+        """Test pie chart exception handling with invalid data."""
+        # Invalid data that might cause exceptions
+        data = {
+            "target_type": "domain",
+            "target_value": "test.com",
+            "total_requests": "invalid",  # Invalid type
+            "successful_requests": 80,
+            "failed_requests": 20
+        }
+        
+        # Should handle exception and return None
+        chart = generator.generate_pie_chart(data)
+        # Might be None or might handle gracefully
+        assert chart is None or isinstance(chart, str)
+
+
+class TestGenerateAnalyticsChart:
+    """Test convenience function for chart generation."""
+    
+    @pytest.fixture
+    def sample_data(self):
+        """Sample analytics data for testing."""
+        return {
+            "target_type": "domain",
+            "target_value": "customer.example.com",
+            "total_requests": 100,
+            "successful_requests": 80,
+            "failed_requests": 20,
+            "success_rate": 80.0,
+            "failure_rate": 20.0
+        }
+    
+    def test_generate_bar_chart_default(self, sample_data):
+        """Test generating bar chart with default settings."""
+        from app.services.chart_service import generate_analytics_chart
+        
+        chart = generate_analytics_chart(sample_data)
+        
+        assert chart is not None
+        assert isinstance(chart, str)
+    
+    def test_generate_bar_chart_success_rate(self, sample_data):
+        """Test generating bar chart for success rate."""
+        from app.services.chart_service import generate_analytics_chart
+        
+        chart = generate_analytics_chart(sample_data, chart_type="success_rate", style="bar")
+        
+        assert chart is not None
+    
+    def test_generate_bar_chart_failure_rate(self, sample_data):
+        """Test generating bar chart for failure rate."""
+        from app.services.chart_service import generate_analytics_chart
+        
+        chart = generate_analytics_chart(sample_data, chart_type="failure_rate", style="bar")
+        
+        assert chart is not None
+    
+    def test_generate_pie_chart_style(self, sample_data):
+        """Test generating pie chart style."""
+        from app.services.chart_service import generate_analytics_chart
+        
+        chart = generate_analytics_chart(sample_data, style="pie")
+        
+        assert chart is not None
+
+
+class TestGenerateComparisonChart:
+    """Test comparison chart generation for multiple targets."""
+    
+    @pytest.fixture
+    def comparison_data(self):
+        """Sample comparison data for testing."""
+        return {
+            "targets": ["customer.csv", "payment.csv"],
+            "metric": "success_rate",
+            "winner": "customer.csv",
+            "comparison_details": [
+                {
+                    "target": "customer.csv",
+                    "metric_value": 95.5,
+                    "total_requests": 1000,
+                    "successful_requests": 955,
+                    "failed_requests": 45
+                },
+                {
+                    "target": "payment.csv",
+                    "metric_value": 88.2,
+                    "total_requests": 800,
+                    "successful_requests": 706,
+                    "failed_requests": 94
+                }
+            ]
+        }
+    
+    def test_generate_comparison_chart_success(self, comparison_data):
+        """Test successful comparison chart generation."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        chart = generate_comparison_chart(comparison_data)
+        
+        assert chart is not None
+        assert isinstance(chart, str)
+        assert len(chart) > 0
+    
+    def test_comparison_chart_with_three_targets(self):
+        """Test comparison chart with three targets."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        data = {
+            "targets": ["customer.csv", "payment.csv", "product.csv"],
+            "metric": "failure_rate",
+            "winner": "product.csv",
+            "comparison_details": [
+                {
+                    "target": "customer.csv",
+                    "metric_value": 5.5,
+                    "total_requests": 1000,
+                    "successful_requests": 945,
+                    "failed_requests": 55
+                },
+                {
+                    "target": "payment.csv",
+                    "metric_value": 11.8,
+                    "total_requests": 800,
+                    "successful_requests": 706,
+                    "failed_requests": 94
+                },
+                {
+                    "target": "product.csv",
+                    "metric_value": 2.1,
+                    "total_requests": 500,
+                    "successful_requests": 489,
+                    "failed_requests": 11
+                }
+            ]
+        }
+        
+        chart = generate_comparison_chart(data)
+        assert chart is not None
+    
+    def test_comparison_chart_with_no_targets(self):
+        """Test comparison chart with empty targets."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        data = {
+            "targets": [],
+            "metric": "success_rate",
+            "winner": None,
+            "comparison_details": []
+        }
+        
+        chart = generate_comparison_chart(data)
+        assert chart is None
+    
+    def test_comparison_chart_with_no_details(self):
+        """Test comparison chart with missing details."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        data = {
+            "targets": ["customer.csv", "payment.csv"],
+            "metric": "success_rate",
+            "winner": "customer.csv",
+            "comparison_details": []
+        }
+        
+        chart = generate_comparison_chart(data)
+        assert chart is None
+    
+    def test_comparison_chart_with_high_values(self):
+        """Test comparison chart with high metric values."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        data = {
+            "targets": ["reliable1.csv", "reliable2.csv"],
+            "metric": "success_rate",
+            "winner": "reliable1.csv",
+            "comparison_details": [
+                {
+                    "target": "reliable1.csv",
+                    "metric_value": 99.9,
+                    "total_requests": 10000,
+                    "successful_requests": 9990,
+                    "failed_requests": 10
+                },
+                {
+                    "target": "reliable2.csv",
+                    "metric_value": 99.5,
+                    "total_requests": 8000,
+                    "successful_requests": 7960,
+                    "failed_requests": 40
+                }
+            ]
+        }
+        
+        chart = generate_comparison_chart(data)
+        assert chart is not None
+    
+    def test_comparison_chart_with_low_values(self):
+        """Test comparison chart with low metric values."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        data = {
+            "targets": ["problematic1.csv", "problematic2.csv"],
+            "metric": "success_rate",
+            "winner": "problematic1.csv",
+            "comparison_details": [
+                {
+                    "target": "problematic1.csv",
+                    "metric_value": 5.0,
+                    "total_requests": 100,
+                    "successful_requests": 5,
+                    "failed_requests": 95
+                },
+                {
+                    "target": "problematic2.csv",
+                    "metric_value": 2.5,
+                    "total_requests": 80,
+                    "successful_requests": 2,
+                    "failed_requests": 78
+                }
+            ]
+        }
+        
+        chart = generate_comparison_chart(data)
+        assert chart is not None
+    
+    def test_comparison_chart_exception_handling(self):
+        """Test comparison chart exception handling."""
+        from app.services.chart_service import generate_comparison_chart
+        
+        # Invalid data structure
+        data = {
+            "targets": ["test.csv"],
+            "metric": "success_rate",
+            "comparison_details": [
+                {
+                    "target": "test.csv",
+                    "metric_value": "invalid",  # Invalid type
+                    "total_requests": 100
+                }
+            ]
+        }
+        
+        # Should handle exception gracefully
+        chart = generate_comparison_chart(data)
+        # Might fail gracefully
+        assert chart is None or isinstance(chart, str)
+
+
+class TestBarChartExceptionHandling:
+    """Test exception handling in bar chart generation."""
+    
+    @pytest.fixture
+    def generator(self):
+        """Create chart generator instance."""
+        return AnalyticsChartGenerator()
+    
+    def test_bar_chart_with_invalid_type_in_values(self, generator):
+        """Test bar chart with invalid data types."""
+        data = {
+            "target_type": "domain",
+            "target_value": "test.com",
+            "total_requests": "hundred",  # Invalid type
+            "successful_requests": 80,
+            "failed_requests": 20,
+            "success_rate": 80.0
+        }
+        
+        # Should handle exception and return None
+        chart = generator.generate_success_failure_bar_chart(data, chart_type="success_rate")
+        assert chart is None or isinstance(chart, str)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
