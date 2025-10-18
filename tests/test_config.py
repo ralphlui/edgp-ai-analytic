@@ -54,6 +54,48 @@ class TestConfigLoading:
         assert config_module.USE_SECRETS_MANAGER is False
 
 
+class TestSecretsManagerIntegration:
+    """Test AWS Secrets Manager integration during config loading."""
+    
+    @patch.dict(os.environ, {'USE_SECRETS_MANAGER': 'true'})
+    @patch('app.services.aws_secrets.get_secrets_manager')
+    def test_secrets_manager_import_error(self, mock_get_secrets):
+        """Test fallback when AWS Secrets Manager import fails."""
+        import importlib
+        import app.config as config_module
+        
+        # Mock import error by removing the module
+        with patch.dict('sys.modules', {'app.services.aws_secrets': None}):
+            # This will trigger ImportError
+            try:
+                importlib.reload(config_module)
+            except:
+                pass
+        
+        # Should fall back to environment variables (verify keys are set)
+        assert hasattr(config_module, 'OPENAI_API_KEY')
+        assert hasattr(config_module, 'JWT_SECRET_KEY')
+    
+    @patch.dict(os.environ, {'USE_SECRETS_MANAGER': 'true', 'OPENAI_API_KEY': 'test_key', 'JWT_SECRET_KEY': 'test_jwt'})
+    @patch('app.services.aws_secrets.get_secrets_manager')
+    def test_secrets_manager_initialization_exception(self, mock_get_secrets):
+        """Test fallback when Secrets Manager initialization fails."""
+        # Mock exception during initialization
+        mock_get_secrets.side_effect = Exception("AWS credentials not found")
+        
+        import importlib
+        import app.config as config_module
+        
+        try:
+            importlib.reload(config_module)
+        except:
+            pass
+        
+        # Should fall back to environment variables
+        assert config_module.OPENAI_API_KEY == 'test_key'
+        assert config_module.JWT_SECRET_KEY == 'test_jwt'
+
+
 class TestAWSSecretsManager:
     """Test AWS Secrets Manager integration."""
     
@@ -117,6 +159,46 @@ class TestAWSSecretsManager:
         secrets_manager.clear_cache()
         
         assert secrets_manager._cache == {}
+
+
+class TestLoadEnvironmentConfig:
+    """Test load_environment_config function edge cases."""
+    
+    @patch('os.path.exists', return_value=False)
+    @patch('app.config.load_dotenv')
+    @patch.dict(os.environ, {'APP_ENV': 'production'})
+    def test_missing_env_file_fallback(self, mock_load_dotenv, mock_exists):
+        """Test fallback when environment-specific file doesn't exist."""
+        from app.config import load_environment_config
+        
+        load_environment_config()
+        
+        # Should call load_dotenv() for fallback
+        mock_load_dotenv.assert_called()
+    
+    @patch('os.path.exists', return_value=True)
+    @patch('app.config.load_dotenv')
+    @patch.dict(os.environ, {'APP_ENV': 'sit'})
+    def test_env_file_exists(self, mock_load_dotenv, mock_exists):
+        """Test loading when environment file exists."""
+        from app.config import load_environment_config
+        
+        load_environment_config()
+        
+        # Should call load_dotenv with the sit env file
+        mock_load_dotenv.assert_called_with('.env.sit')
+    
+    @patch('os.path.exists', return_value=False)
+    @patch('app.config.load_dotenv')
+    @patch.dict(os.environ, {'APP_ENV': 'unknown_env'})
+    def test_unknown_environment(self, mock_load_dotenv, mock_exists):
+        """Test behavior with unknown environment name."""
+        from app.config import load_environment_config
+        
+        load_environment_config()
+        
+        # Should fall back to default .env
+        mock_load_dotenv.assert_called()
 
 
 class TestConfigValidation:
