@@ -650,5 +650,178 @@ class TestErrorHandling:
         assert result is False
 
 
+class TestTableCreationEdgeCases:
+    """Test edge cases in table creation."""
+    
+    @patch('app.services.query_context_service.boto3')
+    def test_table_creation_resource_in_use_exception(self, mock_boto3):
+        """Test handling of ResourceInUseException during table creation."""
+        mock_client = Mock()
+        mock_client.list_tables.return_value = {'TableNames': []}
+        
+        # Simulate ResourceInUseException (table being created)
+        error_response = {'Error': {'Code': 'ResourceInUseException', 'Message': 'Table being created'}}
+        mock_client.create_table.side_effect = ClientError(error_response, 'create_table')
+        
+        mock_boto3.client.return_value = mock_client
+        mock_boto3.resource.return_value = Mock()
+        
+        # Should not raise exception, just log
+        service = QueryContextService()
+        assert service is not None
+    
+    @patch('app.services.query_context_service.boto3')
+    def test_table_creation_other_client_error(self, mock_boto3):
+        """Test handling of other ClientError during table creation."""
+        mock_client = Mock()
+        mock_client.list_tables.return_value = {'TableNames': []}
+        
+        # Simulate other ClientError
+        error_response = {'Error': {'Code': 'AccessDeniedException', 'Message': 'Access denied'}}
+        mock_client.create_table.side_effect = ClientError(error_response, 'create_table')
+        
+        mock_boto3.client.return_value = mock_client
+        mock_boto3.resource.return_value = Mock()
+        
+        # Should raise exception
+        with pytest.raises(ClientError):
+            QueryContextService()
+    
+    @patch('app.services.query_context_service.boto3')
+    def test_table_creation_unexpected_exception(self, mock_boto3):
+        """Test handling of unexpected exception during table creation."""
+        mock_client = Mock()
+        mock_client.list_tables.return_value = {'TableNames': []}
+        mock_client.create_table.side_effect = Exception("Unexpected error")
+        
+        mock_boto3.client.return_value = mock_client
+        mock_boto3.resource.return_value = Mock()
+        
+        # Should raise exception
+        with pytest.raises(Exception):
+            QueryContextService()
+
+
+class TestGetQueryContextWithTTL:
+    """Test get_query_context with TTL validation."""
+    
+    def setup_method(self):
+        """Setup test service with mocked DynamoDB."""
+        with patch('app.services.query_context_service.boto3'):
+            self.service = QueryContextService()
+            self.service.table = Mock()
+    
+    def test_get_query_context_expired_ttl(self):
+        """Test get_query_context returns None when TTL expired."""
+        import time
+        current_time = int(time.time())
+        expired_ttl = current_time - 3600  # 1 hour ago
+        
+        self.service.table.query.return_value = {
+            'Items': [{
+                'user_id': 'user-123',
+                'timestamp': current_time - 7200,
+                'report_type': 'success_rate',
+                'slots': {'domain_name': 'customer'},
+                'ttl': expired_ttl,
+                'updated_at': '2024-01-01T12:00:00'
+            }]
+        }
+        
+        result = self.service.get_query_context('user-123')
+        
+        # Should return None due to expired TTL
+        assert result is None
+    
+    def test_get_query_context_no_items(self):
+        """Test get_query_context returns None when no items found."""
+        self.service.table.query.return_value = {'Items': []}
+        
+        result = self.service.get_query_context('user-123')
+        
+        assert result is None
+    
+    def test_get_query_context_client_error(self):
+        """Test get_query_context handles ClientError."""
+        error_response = {'Error': {'Code': 'ProvisionedThroughputExceededException', 'Message': 'Rate exceeded'}}
+        self.service.table.query.side_effect = ClientError(error_response, 'query')
+        
+        result = self.service.get_query_context('user-123')
+        
+        assert result is None
+    
+    def test_get_query_context_unexpected_exception(self):
+        """Test get_query_context handles unexpected exception."""
+        self.service.table.query.side_effect = Exception("Unexpected error")
+        
+        result = self.service.get_query_context('user-123')
+        
+        assert result is None
+
+
+class TestUpdateExistingRecordEdgeCases:
+    """Test edge cases in _update_existing_record."""
+    
+    def setup_method(self):
+        """Setup test service with mocked DynamoDB."""
+        with patch('app.services.query_context_service.boto3'):
+            self.service = QueryContextService()
+            self.service.table = Mock()
+    
+    def test_update_existing_record_client_error(self):
+        """Test _update_existing_record handles ClientError."""
+        error_response = {'Error': {'Code': 'ConditionalCheckFailedException', 'Message': 'Condition failed'}}
+        self.service.table.update_item.side_effect = ClientError(error_response, 'update_item')
+        
+        result = self.service._update_existing_record(
+            user_id='user-123',
+            timestamp=1234567890,
+            new_intent='success_rate',
+            new_slots={'domain_name': 'customer'},
+            new_prompt='show me success rate',
+            new_comparison_targets=None
+        )
+        
+        assert result is False
+    
+    def test_update_existing_record_unexpected_exception(self):
+        """Test _update_existing_record handles unexpected exception."""
+        self.service.table.update_item.side_effect = Exception("Unexpected error")
+        
+        result = self.service._update_existing_record(
+            user_id='user-123',
+            timestamp=1234567890,
+            new_intent='success_rate',
+            new_slots={'domain_name': 'customer'},
+            new_prompt='show me success rate',
+            new_comparison_targets=None
+        )
+        
+        assert result is False
+
+
+class TestSaveContextUnexpectedException:
+    """Test save_query_context unexpected exception handling."""
+    
+    def setup_method(self):
+        """Setup test service with mocked DynamoDB."""
+        with patch('app.services.query_context_service.boto3'):
+            self.service = QueryContextService()
+            self.service.table = Mock()
+    
+    def test_save_context_unexpected_exception_during_put(self):
+        """Test save_query_context handles unexpected exception during put_item."""
+        self.service.table.put_item.side_effect = Exception("Unexpected error")
+        
+        result = self.service.save_query_context(
+            user_id='user-123',
+            intent='success_rate',
+            slots={'domain_name': 'customer'},
+            original_prompt='show me success rate'
+        )
+        
+        assert result is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=app.services.query_context_service", "--cov-report=term-missing"])

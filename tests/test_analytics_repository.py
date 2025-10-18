@@ -489,5 +489,247 @@ class TestGetAnalyticsRepository:
         assert repo.table_name == "custom_analytics"
 
 
+class TestQueryByDomainEdgeCases:
+    """Test edge cases in _query_by_domain method."""
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_query_by_domain_no_items_found(self, mock_boto_resource):
+        """Test _query_by_domain when no items match domain."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock scan to return empty items list
+        mock_table = Mock()
+        mock_table.scan.return_value = {'Items': []}
+        mock_dynamodb.Table.return_value = mock_table
+        
+        repo = AnalyticsRepository()
+        result = repo._query_by_domain('nonexistent_domain')
+        
+        # Should return empty list and log warning
+        assert result == []
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_query_by_domain_exception_handling(self, mock_boto_resource):
+        """Test _query_by_domain handles exceptions."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock scan to raise exception
+        mock_table = Mock()
+        mock_table.scan.side_effect = Exception("DynamoDB error")
+        mock_dynamodb.Table.return_value = mock_table
+        
+        repo = AnalyticsRepository()
+        result = repo._query_by_domain('customer')
+        
+        # Should return empty list on error
+        assert result == []
+
+
+class TestQueryByFileEdgeCases:
+    """Test edge cases in _query_by_file method."""
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_query_by_file_no_header_found(self, mock_boto_resource):
+        """Test _query_by_file when file not found in header table."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock header table scan to return empty
+        mock_header_table = Mock()
+        mock_header_table.scan.return_value = {'Items': []}
+        
+        mock_tracker_table = Mock()
+        
+        # Setup Table() to return different tables for header vs tracker
+        def table_selector(name):
+            if 'header' in name:
+                return mock_header_table
+            else:
+                return mock_tracker_table
+        
+        mock_dynamodb.Table.side_effect = table_selector
+        
+        repo = AnalyticsRepository()
+        result = repo._query_by_file('nonexistent.csv')
+        
+        # Should return empty list when file not found
+        assert result == []
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_query_by_file_missing_id_field(self, mock_boto_resource):
+        """Test _query_by_file when header record has no 'id' field."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock header table scan to return item without 'id' field
+        mock_header_table = Mock()
+        mock_header_table.scan.return_value = {
+            'Items': [{'file_name': 'customer.csv'}]  # Missing 'id' field
+        }
+        
+        mock_tracker_table = Mock()
+        
+        def table_selector(name):
+            if 'header' in name:
+                return mock_header_table
+            else:
+                return mock_tracker_table
+        
+        mock_dynamodb.Table.side_effect = table_selector
+        
+        repo = AnalyticsRepository()
+        result = repo._query_by_file('customer.csv')
+        
+        # Should return empty list when id field missing
+        assert result == []
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_query_by_file_with_pagination(self, mock_boto_resource):
+        """Test _query_by_file handles pagination correctly."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Create persistent mock tables
+        mock_header_table = Mock()
+        mock_header_table.scan.return_value = {
+            'Items': [{'file_name': 'customer.csv', 'id': 'file-123'}]
+        }
+        
+        # Mock tracker table with pagination
+        mock_tracker_table = Mock()
+        mock_tracker_table.scan.side_effect = [
+            {
+                'Items': [
+                    {'file_id': 'file-123', 'final_status': 'success'}
+                ],
+                'LastEvaluatedKey': {'id': 'last-key'}
+            },
+            {
+                'Items': [
+                    {'file_id': 'file-123', 'final_status': 'failure'}
+                ]
+            }
+        ]
+        
+        # Use a dictionary to map table names to mock tables
+        table_map = {
+            'analytics_events': mock_tracker_table,
+            'MasterDataHeaderTEST': mock_header_table
+        }
+        
+        mock_dynamodb.Table.side_effect = lambda name: table_map.get(name, mock_tracker_table)
+        
+        repo = AnalyticsRepository()
+        result = repo._query_by_file('customer.csv')
+        
+        # Should return all items from both pages
+        assert len(result) == 2
+        assert mock_tracker_table.scan.call_count == 2
+
+
+class TestBuildTimeSeriesEdgeCases:
+    """Test edge cases in _build_time_series method."""
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_build_time_series_with_no_timestamp(self, mock_boto_resource):
+        """Test _build_time_series handles items without timestamp."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        repo = AnalyticsRepository()
+        
+        items = [
+            {'final_status': 'success'},  # No timestamp
+            {'timestamp': '', 'final_status': 'success'},  # Empty timestamp
+        ]
+        
+        result = repo._build_time_series(items)
+        
+        # Should skip items without valid timestamps
+        assert result == []
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_build_time_series_with_zero_total(self, mock_boto_resource):
+        """Test _build_time_series handles zero total edge case."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        repo = AnalyticsRepository()
+        
+        # Items that will result in 0 success and 0 failure
+        items = [
+            {'timestamp': '2024-01-01T10:00:00Z', 'final_status': 'unknown'}
+        ]
+        
+        result = repo._build_time_series(items)
+        
+        # Should handle zero total gracefully (though won't appear in output)
+        assert isinstance(result, list)
+
+
+class TestDebugScanSampleEdgeCases:
+    """Test edge cases in debug_scan_sample method."""
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_debug_scan_sample_exception_handling(self, mock_boto_resource):
+        """Test debug_scan_sample handles exceptions."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock scan to raise exception
+        mock_table = Mock()
+        mock_table.scan.side_effect = Exception("DynamoDB error")
+        mock_dynamodb.Table.return_value = mock_table
+        
+        repo = AnalyticsRepository()
+        result = repo.debug_scan_sample()
+        
+        # Should return empty list on error
+        assert result == []
+    
+    @patch('app.repositories.analytics_repository.boto3.resource')
+    def test_debug_scan_sample_with_items(self, mock_boto_resource):
+        """Test debug_scan_sample returns items successfully."""
+        from app.repositories.analytics_repository import AnalyticsRepository
+        
+        mock_dynamodb = MagicMock()
+        mock_boto_resource.return_value = mock_dynamodb
+        
+        # Mock scan to return sample items
+        mock_table = Mock()
+        mock_table.scan.return_value = {
+            'Items': [
+                {'domain_name': 'customer', 'final_status': 'success'},
+                {'domain_name': 'payment', 'final_status': 'failure'}
+            ]
+        }
+        mock_dynamodb.Table.return_value = mock_table
+        
+        repo = AnalyticsRepository()
+        result = repo.debug_scan_sample(limit=5)
+        
+        # Should return the items
+        assert len(result) == 2
+        assert result[0]['domain_name'] == 'customer'
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

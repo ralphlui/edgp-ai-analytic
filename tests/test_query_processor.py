@@ -833,5 +833,344 @@ class TestQueryHandlerOutputValidation:
                 assert "cannot provide" in result["message"].lower() or "apologize" in result["message"].lower()
 
 
+class TestQueryHandlerComplexQueryExecution:
+    """Test complex query execution path (lines 163-215)."""
+    
+    @pytest.fixture
+    def processor(self):
+        """Create QueryProcessor instance."""
+        from app.services.query_processor import QueryProcessor
+        return QueryProcessor()
+    
+    @pytest.fixture
+    def mock_auth_success(self):
+        """Mock successful authentication."""
+        return {
+            "success": True,
+            "payload": {
+                "sub": "user-123",
+                "orgId": "org-456"
+            }
+        }
+    
+    @pytest.mark.asyncio
+    @patch('app.orchestration.complex_query_executor.execute_plan')
+    @patch('app.orchestration.planner_agent.create_execution_plan')
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_complex_query_execution_success(
+        self, mock_validate, mock_agent_func, mock_context_service, 
+        mock_create_plan, mock_execute_plan, processor, mock_auth_success
+    ):
+        """Test successful complex query execution with planner and executor."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {}
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "complex"  # Must be "complex" to trigger complex query path
+        mock_result.high_level_intent = "comparison"  # Set high_level_intent
+        mock_result.comparison_targets = ["customer.csv", "product.csv"]
+        mock_result.missing_required = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value=None)
+        mock_context.should_save_context = Mock(return_value=True)
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {},
+            "comparison_targets": ["customer.csv", "product.csv"]
+        })
+        mock_context_service.return_value = mock_context
+        
+        # Mock planner
+        mock_plan = Mock()
+        mock_plan.plan_id = "plan-123"
+        mock_plan.steps = [Mock(), Mock()]
+        mock_plan.metadata = {"estimated_duration": "30s"}
+        mock_plan.dict = Mock(return_value={"plan_id": "plan-123", "steps": []})
+        mock_create_plan.return_value = mock_plan
+        
+        # Mock executor
+        mock_execute_plan.return_value = {
+            "success": True,
+            "message": "Comparison complete: customer.csv has higher success rate",
+            "chart_image": "base64_chart"
+        }
+        
+        # Mock validate_llm_output
+        with patch('app.services.query_processor.validate_llm_output') as mock_validate_output:
+            mock_validate_output.return_value = (True, None)
+            
+            request = PromptRequest(prompt="Compare success rate for customer.csv and product.csv")
+            result = await processor.query_handler(request, Mock(), Mock())
+            
+            # Verify success
+            assert result["success"] is True
+            assert "success rate" in result["message"].lower()
+            assert mock_create_plan.called
+            assert mock_execute_plan.called
+    
+    @pytest.mark.asyncio
+    @patch('app.orchestration.complex_query_executor.execute_plan')
+    @patch('app.orchestration.planner_agent.create_execution_plan')
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_complex_query_execution_plan_exception(
+        self, mock_validate, mock_agent_func, mock_context_service,
+        mock_create_plan, mock_execute_plan, processor, mock_auth_success
+    ):
+        """Test complex query execution handles planner exception."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {}
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "comparison"
+        mock_result.comparison_targets = ["customer.csv", "product.csv"]
+        mock_result.missing_required = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value=None)
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {},
+            "comparison_targets": ["customer.csv", "product.csv"]
+        })
+        mock_context_service.return_value = mock_context
+        
+        # Mock planner to raise exception
+        mock_create_plan.side_effect = Exception("Planner failed")
+        
+        request = PromptRequest(prompt="Compare success rate for customer.csv and product.csv")
+        result = await processor.query_handler(request, Mock(), Mock())
+        
+        # Should handle error gracefully
+        assert result["success"] is False
+        assert "error" in result["message"].lower()
+    
+    @pytest.mark.asyncio
+    @patch('app.orchestration.complex_query_executor.execute_plan')
+    @patch('app.orchestration.planner_agent.create_execution_plan')
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_complex_query_output_blocked(
+        self, mock_validate, mock_agent_func, mock_context_service,
+        mock_create_plan, mock_execute_plan, processor, mock_auth_success
+    ):
+        """Test complex query blocks unsafe output."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {}
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "comparison"
+        mock_result.comparison_targets = ["customer.csv", "product.csv"]
+        mock_result.missing_required = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value=None)
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {},
+            "comparison_targets": ["customer.csv", "product.csv"]
+        })
+        mock_context_service.return_value = mock_context
+        
+        # Mock planner and executor
+        mock_plan = Mock()
+        mock_plan.plan_id = "plan-123"
+        mock_plan.steps = [Mock()]
+        mock_plan.metadata = {}
+        mock_plan.dict = Mock(return_value={})
+        mock_create_plan.return_value = mock_plan
+        
+        mock_execute_plan.return_value = {
+            "success": True,
+            "message": "API key: sk-12345",
+            "chart_image": None
+        }
+        
+        # Mock validate_llm_output to detect leak
+        with patch('app.services.query_processor.validate_llm_output') as mock_validate_output:
+            mock_validate_output.return_value = (False, "API key detected")
+            
+            request = PromptRequest(prompt="Compare customer.csv and product.csv")
+            result = await processor.query_handler(request, Mock(), Mock())
+            
+            # Should block unsafe output
+            assert result["success"] is False
+            assert "cannot provide" in result["message"].lower()
+
+
+class TestQueryHandlerConflictResolution:
+    """Test conflict resolution with confirmation (lines 271-304)."""
+    
+    @pytest.fixture
+    def processor(self):
+        """Create QueryProcessor instance."""
+        from app.services.query_processor import QueryProcessor
+        return QueryProcessor()
+    
+    @pytest.fixture
+    def mock_auth_success(self):
+        """Mock successful authentication."""
+        return {
+            "success": True,
+            "payload": {
+                "sub": "user-123",
+                "orgId": "org-456"
+            }
+        }
+    
+    @pytest.mark.asyncio
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_conflict_resolution_use_current(
+        self, mock_validate, mock_agent_func, mock_context_service,
+        processor, mock_auth_success
+    ):
+        """Test user confirms to use current target (option 1)."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {"domain_name": "customer"}
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "simple"
+        mock_result.comparison_targets = []
+        mock_result.missing_required = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service with conflict pending
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {
+                "domain_name": "customer",
+                "_conflict_pending": True
+            }
+        })
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {"domain_name": "customer"}
+        })
+        mock_context.should_save_context = Mock(return_value=True)
+        mock_context_service.return_value = mock_context
+        
+        # Mock executor
+        with patch('app.orchestration.simple_query_executor.run_analytics_query') as mock_executor:
+            mock_executor.return_value = {
+                "success": True,
+                "message": "Success rate: 95%",
+                "chart_image": None
+            }
+            
+            # Mock validate_llm_output
+            with patch('app.services.query_processor.validate_llm_output') as mock_validate_output:
+                mock_validate_output.return_value = (True, None)
+                
+                # User chooses option 1 (use current)
+                request = PromptRequest(prompt="1")
+                result = await processor.query_handler(request, Mock(), Mock())
+                
+                # Should execute query with resolved conflict
+                assert result["success"] is True
+    
+    @pytest.mark.asyncio
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_conflict_resolution_use_previous(
+        self, mock_validate, mock_agent_func, mock_context_service,
+        processor, mock_auth_success
+    ):
+        """Test user confirms to use previous target (option 2)."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = None
+        mock_result.slots = {}
+        mock_result.is_complete = False
+        mock_result.clarification_needed = None
+        mock_result.query_type = "simple"
+        mock_result.comparison_targets = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service with conflict pending
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {
+                "domain_name": "customer",
+                "file_name": "data.csv",
+                "_conflict_pending": True
+            }
+        })
+        mock_context.clear_query_context = Mock()
+        mock_context_service.return_value = mock_context
+        
+        # User chooses option 2 (use previous)
+        request = PromptRequest(prompt="2")
+        result = await processor.query_handler(request, Mock(), Mock())
+        
+        # Should clear context and ask to re-specify
+        assert result["success"] is False
+        assert "cleared" in result["message"].lower() or "specify" in result["message"].lower()
+        assert mock_context.clear_query_context.called
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
