@@ -215,12 +215,14 @@ class AnalyticsRepository:
         Returns:
             List of items from DynamoDB
         """  
-        logger.info(f"Scanning DynamoDB table '{self.table_name}' for domain: {domain_name}")
+        # Convert domain_name to lowercase for case-insensitive search
+        domain_name_lower = domain_name.lower()
+        logger.info(f"Scanning DynamoDB table '{self.table_name}' for domain: {domain_name_lower} (original: {domain_name})")
         items = []
         
         try:
             # Build filter expression with optional org_id filtering
-            filter_expr = Attr('domain_name').eq(domain_name)
+            filter_expr = Attr('domain_name').eq(domain_name_lower)
             if org_id:
                 filter_expr = filter_expr & Attr('organization_id').eq(org_id)
                 logger.info(f"Filtering by organization_id: {org_id}")
@@ -249,11 +251,11 @@ class AnalyticsRepository:
                 logger.info(f"Sample item fields: {list(first_item.keys())}")
                 logger.info(f"Sample item final_status: {first_item.get('final_status')}")
             else:
-                logger.warning(f"No items found for domain: {domain_name}")
+                logger.warning(f"No items found for domain: {domain_name_lower}")
             
         except Exception as e:
             logger.exception(f"Error scanning DynamoDB: {e}")
-            logger.error(f"Table: {self.table_name}, Domain: {domain_name}")
+            logger.error(f"Table: {self.table_name}, Domain: {domain_name_lower}")
             # Return empty list on error
             return []
         
@@ -274,28 +276,30 @@ class AnalyticsRepository:
         Returns:
             List of items from DynamoDB
         """
-        logger.info(f"Querying for file: {file_name}")
+        # Convert file_name to lowercase for case-insensitive search
+        file_name_lower = file_name.lower()
+        logger.info(f"Querying for file: {file_name_lower} (original: {file_name})")
 
         items = []
         
         try:
             # Step 1: Get file_id from header table using file_name
-            logger.info(f"Step 1: Looking up file_id from header table for file_name: {file_name}")
+            logger.info(f"Step 1: Looking up file_id from header table for file_name: {file_name_lower}")
             header_response = self.header_table.scan(
-                FilterExpression=Attr('file_name').eq(file_name)
+                FilterExpression=Attr('file_name').eq(file_name_lower)
             )
             
             header_items = header_response.get('Items', [])
             if not header_items:
-                logger.warning(f"No file_id found in header table for file_name: {file_name}")
+                logger.warning(f"No file_id found in header table for file_name: {file_name_lower}")
                 return []
             
             file_id = header_items[0].get('id')
             if not file_id:
-                logger.error(f"Header record found but 'id' field is missing for file_name: {file_name}")
+                logger.error(f"Header record found but 'id' field is missing for file_name: {file_name_lower}")
                 return []
             
-            logger.info(f"Resolved file_name '{file_name}' -> file_id '{file_id}'")
+            logger.info(f"Resolved file_name '{file_name_lower}' -> file_id '{file_id}'")
             
             # Step 2: Query tracker table using file_id and get final_status
             logger.info(f"Step 2: Scanning tracker table for file_id: {file_id}")
@@ -333,7 +337,7 @@ class AnalyticsRepository:
             
         except Exception as e:
             logger.exception(f"Error querying DynamoDB: {e}")
-            logger.error(f"Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name}")
+            logger.error(f"Tracker table: {self.table_name}, Header table: {DYNAMODB_HEADER_TABLE_NAME}, File: {file_name_lower}")
             # Return empty list on error
             return []
         
