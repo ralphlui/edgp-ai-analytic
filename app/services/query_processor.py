@@ -87,14 +87,15 @@ class QueryProcessor:
 
             logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete},  High Intent: {result.high_level_intent}, Clarification: {result.clarification_needed}, Query Type: {result.query_type}")
 
-            # Handle out-of-scope queries (non-analytics questions)
-            if result.clarification_needed is not None:
+            # Handle out-of-scope queries (greetings, chitchat, non-analytics questions)
+            if result.intent == "out_of_scope":
                 logger.info(f"Out-of-scope query detected: '{request.prompt}'")
                 return {
                     "success": False,
                     "message": result.clarification_needed or "I'm specialized in analytics. Please ask about success rates, failure rates, or data analysis.",
                     "chart_image": None,
                 }
+            
             # Smart Inheritance Logic: Try to inherit missing fields from previous context
             # This enables natural multi-turn conversations
             pending_service = get_query_context_service()
@@ -215,7 +216,7 @@ class QueryProcessor:
                         "chart_image": None
                     }
                   
-              
+            
             # Check if we're missing report_type OR target (domain/file)
             has_report_type = result.intent in ['success_rate', 'failure_rate']
             has_domain = result.slots.get('domain_name') and result.slots.get('domain_name') != ''

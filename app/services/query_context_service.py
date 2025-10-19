@@ -135,11 +135,18 @@ class QueryContextService:
                 
                 # REPLACE strategy: Update existing record with new values
                 # This also refreshes the TTL
-                intent = intent if intent != "" else existing.get('intent')
+                existing_intent = existing.get('intent')
+                chosen_intent = ""
+                # Choose incoming intent if it's one we track, otherwise keep the existing intent
+                if intent in ("success_rate", "failure_rate"):
+                    chosen_intent = intent
+                elif existing_intent in ("success_rate", "failure_rate"):
+                    chosen_intent = existing_intent
+               
                 updated = self._update_existing_record(
                     user_id=user_id,
                     timestamp=existing['timestamp'],
-                    new_intent=intent,
+                    new_intent=chosen_intent,
                     new_slots=slots,
                     new_prompt=original_prompt,
                     new_comparison_targets=comparison_targets

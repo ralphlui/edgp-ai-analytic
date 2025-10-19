@@ -4,8 +4,9 @@ import uuid
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
 from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from app.prompts.planner_prompts import PlannerPrompt
 
 logger = logging.getLogger("planner_agent")
 
@@ -81,120 +82,14 @@ Available Actions (tools that can be executed):
    - Example: {{"comparison_step_id": 3, "chart_step_id": 4}}
 """
 
+# NOTE: AVAILABLE_ACTIONS catalog is now embedded in secure template (app/prompts/planner_prompts.py)
+# System prompt moved to secure template for 15-layer security with template integrity verification,
+# input sanitization, structural isolation, proactive leakage prevention, and response validation.
+
 
 # ============================================================================
-# PLANNER SYSTEM PROMPT
+# PLANNER AGENT FUNCTIONS
 # ============================================================================
-
-PLANNER_SYSTEM_PROMPT = f"""You are an expert query planner for analytics systems. Your job is to create 
-efficient, step-by-step execution plans for analytical queries.
-
-{AVAILABLE_ACTIONS}
-
-PLANNING RULES:
-
-1. **Step IDs**: Must be sequential integers starting from 1
-2. **Dependencies**: Use depends_on to specify prerequisite steps
-3. **Parallel Execution**: Steps with no mutual dependencies can run in parallel
-4. **Critical Steps**: Mark data retrieval and comparison steps as critical=true
-5. **Final Steps**: Always end with generate_chart and format_response
-6. **Efficiency**: Minimize redundant queries - one query per target
-
-QUERY PATTERNS:
-
-Pattern 1: Simple Comparison (2 targets)
-- Step 1: query_analytics for target A
-- Step 2: query_analytics for target B (can run parallel with Step 1)
-- Step 3: compare_results (inputs: [1, 2])
-- Step 4: generate_chart (data_source: 3)
-- Step 5: format_response (data_source: 3, chart: 4)
-
-Pattern 2: Multi-Target Comparison (3+ targets)
-- Steps 1-N: query_analytics for each target (all parallel)
-- Step N+1: compare_results (inputs: [1, 2, ..., N])
-- Step N+2: generate_chart (data_source: N+1)
-- Step N+3: format_response (data_source: N+1, chart: N+2)
-
-OUTPUT FORMAT:
-
-Return ONLY valid JSON matching this structure:
-{{{{
-  "plan_id": "plan-abc123",
-  "query_type": "comparison" | "aggregation" | "trend",
-  "intent": "success_rate" | "failure_rate",
-  "steps": [
-    {{{{
-      "step_id": 1,
-      "action": "query_analytics",
-      "description": "Query success rate for customer.csv",
-      "params": {{{{"target": "customer.csv", "metric_type": "success_rate"}}}},
-      "depends_on": [],
-      "critical": true
-    }}}},
-    ...
-  ],
-  "metadata": {{{{
-    "estimated_duration": "2-3 seconds",
-    "complexity": "medium"
-  }}}}
-}}}}
-
-EXAMPLE: Compare success rates between customer.csv and payment.csv
-{{{{
-  "plan_id": "plan-001",
-  "query_type": "comparison",
-  "intent": "success_rate",
-  "steps": [
-    {{{{
-      "step_id": 1,
-      "action": "query_analytics",
-      "description": "Query success rate for customer.csv",
-      "params": {{{{"target": "customer.csv", "metric_type": "success_rate"}}}},
-      "depends_on": [],
-      "critical": true
-    }}}},
-    {{{{
-      "step_id": 2,
-      "action": "query_analytics",
-      "description": "Query success rate for payment.csv",
-      "params": {{{{"target": "payment.csv", "metric_type": "success_rate"}}}},
-      "depends_on": [],
-      "critical": true
-    }}}},
-    {{{{
-      "step_id": 3,
-      "action": "compare_results",
-      "description": "Compare success rates between the two targets",
-      "params": {{{{"compare_steps": [1, 2], "metric": "success_rate"}}}},
-      "depends_on": [1, 2],
-      "critical": true
-    }}}},
-    {{{{
-      "step_id": 4,
-      "action": "generate_chart",
-      "description": "Create comparison bar chart",
-      "params": {{{{"comparison_step_id": 3}}}},
-      "depends_on": [3],
-      "critical": false
-    }}}},
-    {{{{
-      "step_id": 5,
-      "action": "format_response",
-      "description": "Generate natural language summary",
-      "params": {{{{"comparison_step_id": 3, "chart_step_id": 4}}}},
-      "depends_on": [3],
-      "critical": false
-    }}}}
-  ],
-  "metadata": {{{{
-    "estimated_duration": "2-3 seconds",
-    "complexity": "medium",
-    "targets_count": 2
-  }}}}
-}}}}
-
-Now create an optimal execution plan based on the user's query.
-"""
 
 
 # ============================================================================
@@ -251,39 +146,30 @@ def create_execution_plan(
         api_key=OPENAI_API_KEY
     )
     
-    # Build user prompt with query details
-    user_prompt = f"""Create an execution plan for this analytical query:
-
-**User Query**: "{user_query}"
-
-**Extracted Parameters**:
-- Intent: {intent}
-- Query Type: {query_type}
-- Comparison Targets: {comparison_targets or "None"}
-
-**Requirements**:
-1. Create optimal plan with minimal steps
-2. Enable parallel execution where possible (steps with no dependencies)
-3. Include chart generation for visualization
-4. End with natural language response formatting
-5. Return valid JSON only
-
-Generate the execution plan now:
-"""
+    # Initialize secure prompt template
+    planner_prompt = PlannerPrompt()
     
-    # Create prompt template
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", PLANNER_SYSTEM_PROMPT),
-        ("user", user_prompt)
-    ])
+    # Get secure system prompt with leakage prevention
+    system_prompt = planner_prompt.get_system_prompt()
     
-    # Create chain
-    chain = prompt | llm
+    # Format user message with security validation and structural isolation
+    user_prompt = planner_prompt.format_user_message(
+        user_query=user_query,
+        intent=intent,
+        query_type=query_type,
+        comparison_targets=comparison_targets or []
+    )
+    
+    # Build messages array with secure prompts (no template variables needed)
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt)
+    ]
     
     try:
         # Invoke LLM to generate plan
         logger.info("Invoking LLM to generate plan...")
-        response = chain.invoke({})
+        response = llm.invoke(messages)
         
         logger.info(f"LLM Response received ({len(response.content)} chars)")
         logger.debug(f"Raw LLM output:\n{response.content}")
@@ -301,6 +187,9 @@ Generate the execution plan now:
         
         # Parse JSON
         plan_dict = json.loads(content)
+        
+        # Validate response schema with security checks
+        planner_prompt.validate_response_schema(plan_dict)
         
         # Validate and create ExecutionPlan object
         plan = ExecutionPlan(**plan_dict)

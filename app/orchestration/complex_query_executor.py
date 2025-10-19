@@ -3,6 +3,10 @@ from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from app.prompts.complex_executor_prompts import (
+    ComplexExecutorToolSelectionPrompt,
+    ComplexExecutorResponseFormattingPrompt
+)
 
 logger = logging.getLogger("complex_query_executor")
 
@@ -69,40 +73,18 @@ async def execute_query_analytics(
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
     llm_with_tools = llm.bind_tools(tools)
     
-    # System prompt for tool selection
-    system_prompt = """You are an analytics tool selector. Your job is to:
-
-1. Analyze the requested metric_type
-2. Select the appropriate analytics tool
-3. Format the tool call with correct parameters
-
-Available Tools:
-- generate_success_rate_report: For success rate analysis
-- generate_failure_rate_report: For failure rate analysis
-
-Rules:
-- metric_type = "success_rate" → Use generate_success_rate_report
-- metric_type = "failure_rate" → Use generate_failure_rate_report
-- Provide EXACTLY ONE of domain_name or file_name (never both)
-- Set the unused parameter to null
-
-Example:
-metric_type: "success_rate"
-target_type: "file_name"
-target: "product.csv"
-
-→ Tool: generate_success_rate_report
-→ Args: {"file_name": "product.csv", "domain_name": null}
-"""
+    # Initialize secure prompt template for tool selection
+    tool_selection_prompt = ComplexExecutorToolSelectionPrompt()
     
-    # User prompt with parameters
-    user_prompt = f"""Select the analytics tool for:
-
-metric_type: "{metric_type}"
-target_type: "{target_type}"
-target: "{target}"
-
-Call the appropriate tool with the correct parameters."""
+    # Get secure system prompt with leakage prevention
+    system_prompt = tool_selection_prompt.get_system_prompt()
+    
+    # Format user message with security validation and structural isolation
+    user_prompt = tool_selection_prompt.format_user_message(
+        metric_type=metric_type,
+        target_type=target_type,
+        target=target
+    )
     
     messages = [
         {"role": "system", "content": system_prompt},
@@ -304,53 +286,23 @@ async def execute_format_response(
     metric = comparison_data.get("metric", "success_rate")
     details = comparison_data.get("comparison_details", [])
     
-    # System prompt - defines role and output requirements
-    system_prompt = """You are a helpful analytics assistant specialized in presenting comparison results.
-
-Your role:
-- Analyze comparison data and present it in a conversational, easy-to-understand format
-- Highlight key insights and differences between targets
-- Use a friendly, professional tone
-- Make the data accessible to non-technical users
-
-Output requirements:
-1. Directly answer the user's question
-2. Clearly identify the winner and explain why
-3. Highlight key differences between targets
-4. Provide actionable insights about the comparison
-5. Use appropriate emojis (🏆 for winner, 📊 for stats, etc.) for visual clarity
-6. Keep the tone conversational but professional
-7. Mention when a chart visualization is available
-8. Return ONLY the message text (not JSON)
-
-Format guidelines:
-- Start with a direct answer to the user's question
-- Use bullet points or structured paragraphs for clarity
-- Include specific numbers and percentages
-- End with a summary or recommendation if appropriate
-"""
+    # Initialize secure prompt template for response formatting
+    response_formatting_prompt = ComplexExecutorResponseFormattingPrompt()
     
-    # User prompt - provides the actual data
-    user_prompt = f"""The user asked: "{user_query}"
-
-I compared {metric.replace('_', ' ')} across {len(targets)} targets and found:
-
-Comparison Results:
-"""
+    # Get secure system prompt with leakage prevention
+    system_prompt = response_formatting_prompt.get_system_prompt()
     
-    for detail in details:
-        is_winner = detail["target"] == winner
-        user_prompt += f"\n{'🏆 ' if is_winner else ''}**{detail['target']}**:"
-        user_prompt += f"\n  - {metric.replace('_', ' ').title()}: {detail['metric_value']}%"
-        user_prompt += f"\n  - Total Requests: {detail['total_requests']}"
-        user_prompt += f"\n  - Successful: {detail['successful_requests']}"
-        user_prompt += f"\n  - Failed: {detail['failed_requests']}"
+    # Format user message with security validation and structural isolation
+    user_prompt = response_formatting_prompt.format_user_message(
+        user_query=user_query,
+        targets=targets,
+        winner=winner,
+        metric=metric,
+        details=details,
+        has_chart=bool(chart_image)
+    )
     
-    user_prompt += f"\n\nWinner: {winner}"
-    user_prompt += f"\n\nChart visualization: {'Available' if chart_image else 'Not available'}"
-    user_prompt += "\n\nPlease format this into a natural, conversational response following the guidelines."
-    
-    # Build messages array with proper role separation
+    # Build messages array with secure prompts
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
