@@ -229,7 +229,8 @@ class QueryProcessor:
             previous_data = pending_service.get_query_context(user_id)
             
             # CONFLICT DETECTION: Check if user is switching target types
-            if previous_data and has_target:
+            # Skip conflict detection if we're already in a conflict state (marker exists)
+            if previous_data and has_target and not previous_data.get('slots', {}).get('_conflict_pending'):
                 prev_domain = previous_data.get('slots', {}).get('domain_name')
                 prev_file = previous_data.get('slots', {}).get('file_name')
                 
@@ -238,7 +239,7 @@ class QueryProcessor:
                     prev_target = f"domain '{prev_domain}'" if prev_domain else f"file '{prev_file}'"
                     curr_target = f"domain '{result.slots['domain_name']}'" if has_domain else f"file '{result.slots['file_name']}'"
                     
-                    logger.warning(f"arget conflict detected: {prev_target} vs {curr_target}")
+                    logger.warning(f"Target conflict detected: {prev_target} vs {curr_target}")
                     
                     # Save the new extraction temporarily with a special marker
                     # This allows us to retrieve it when user confirms
