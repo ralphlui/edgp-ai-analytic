@@ -1,19 +1,3 @@
-"""
-Analytics Orchestrator - Coordinates analytics query execution using Pattern B.
-
-Pattern B: Tools return raw data, LLM generates natural language responses.
-
-This orchestrator coordinates:
-- Tool execution (analytics data retrieval)
-- Chart generation (visualization)
-- LLM response formatting (natural language)
-
-Benefits:
-- Better conversational flow with context-aware responses
-- Flexibility for multi-turn conversations
-- Natural language adaptation to user's query style
-- Easier maintenance (clear separation of concerns)
-"""
 import logging
 from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END

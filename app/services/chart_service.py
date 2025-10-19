@@ -1,8 +1,3 @@
-"""
-Chart generation service for analytics visualizations.
-
-Generates base64-encoded charts from analytics data using matplotlib.
-"""
 import logging
 import base64
 from io import BytesIO

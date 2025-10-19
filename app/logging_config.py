@@ -1,11 +1,3 @@
-"""
-Logging Configuration Module
-
-Centralized logging configuration with PII redaction for the analytics agent.
-This module sets up logging with automatic PII filtering to ensure compliance
-with data protection regulations (GDPR, CCPA).
-"""
-
 import logging
 import sys
 from typing import Optional

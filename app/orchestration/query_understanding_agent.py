@@ -1,11 +1,3 @@
-"""
-Query Understanding Agent for Analytics Queries.
-
-This agent uses LLM to understand and extract:
-- Intent: What type of analysis the user wants (success_rate, failure_rate, etc.)
-- Entities: What entities to analyze (domain_name, file_name, etc.)
-- Completeness: Whether the query has all required information
-"""
 import json
 import logging
 from typing import Dict, Any, Optional, List

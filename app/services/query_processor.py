@@ -1,6 +1,3 @@
-"""
-Enhanced query coordinator with simplified reference resolution and improved security.
-"""
 import logging
 import time
 from typing import Dict, Any

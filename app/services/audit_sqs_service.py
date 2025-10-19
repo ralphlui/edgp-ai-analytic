@@ -1,8 +1,3 @@
-"""
-AWS SQS Audit Logging Service for Analytics API.
-
-Sends structured audit logs to SQS queue for analytics activities.
-"""
 import json
 import logging
 from datetime import datetime, timezone

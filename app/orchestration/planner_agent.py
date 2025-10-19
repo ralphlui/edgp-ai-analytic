@@ -1,17 +1,3 @@
-"""
-Planner Agent - Creates execution plans for complex analytical queries.
-
-This agent uses LLM to break down complex queries (comparison, aggregation, trend)
-into structured execution plans that can be executed by the Query Executor.
-
-Key Responsibilities:
-- Analyze user intent and query structure
-- Generate step-by-step execution plans
-- Define dependencies between steps
-- Optimize execution order for efficiency
-
-NO TOOLS EXECUTED - Only plan generation using LLM.
-"""
 import logging
 import json
 import uuid

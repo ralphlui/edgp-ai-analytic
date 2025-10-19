@@ -1,20 +1,3 @@
-"""
-Complex Query Executor - Executes multi-step execution plans using LangGraph.
-
-This module implements a LangGraph-based executor that:
-1. Takes execution plans from planner_agent
-2. Executes each step sequentially with state management
-3. Uses LLM for intelligent tool selection in query_analytics steps
-4. Supports multi-tenant data isolation via org_id
-5. Handles comparison logic and chart generation
-6. Formats final results with natural language
-
-Architecture:
-- ExecutionState: TypedDict for state management (org_id, results, errors)
-- Action Handlers: Functions for each action type (query, compare, chart, format)
-- LangGraph Workflow: Orchestrates execution flow with conditional routing
-- Multi-tenant Support: org_id passed through entire execution pipeline
-"""
 import logging
 from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, END

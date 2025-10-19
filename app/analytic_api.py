@@ -1,7 +1,3 @@
-"""
-Clean FastAPI application with separated concerns.
-Main.py only handles routing and basic app setup.
-"""
 import time
 from contextlib import asynccontextmanager
 from typing import Dict, Any

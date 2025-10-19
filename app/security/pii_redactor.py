@@ -1,22 +1,3 @@
-"""
-PII Redaction Module
-
-This module provides automatic redaction of Personally Identifiable Information (PII)
-from log messages to ensure GDPR/CCPA compliance and data protection.
-
-Redacted PII Types:
-- Email addresses
-- Phone numbers (international formats)
-- JWT tokens
-- API keys
-- AWS credentials
-- IP addresses
-- Credit card numbers
-- Social Security Numbers
-- Usernames in URLs
-- Custom token patterns
-"""
-
 import re
 import logging
 from typing import Pattern, List, Tuple

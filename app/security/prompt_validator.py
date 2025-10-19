@@ -1,9 +1,3 @@
-"""
-Advanced prompt injection detection and output validation.
-
-This module provides comprehensive security validation for user inputs
-and LLM outputs to prevent prompt injection attacks and information leakage.
-"""
 import logging
 import re
 import unicodedata

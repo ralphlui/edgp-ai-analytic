@@ -1,9 +1,3 @@
-"""
-Service for managing query context in DynamoDB.
-
-This service stores user query context (report type, domain/file targets, prompts) 
-to support multi-turn conversations and context inheritance.
-"""
 import logging
 import time
 from typing import Dict, Any, Optional

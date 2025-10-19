@@ -1,7 +1,3 @@
-"""
-AWS Secrets Manager integration for secure key management.
-Provides secure retrieval of JWT public keys and API keys from AWS Secrets Manager.
-"""
 import json
 import logging
 import os

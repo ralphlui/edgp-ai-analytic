@@ -1,9 +1,3 @@
-"""
-Analytics Repository for querying analytics data from DynamoDB.
-
-This repository handles all database queries for success/failure rate analytics
-by domain or file name.
-"""
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
