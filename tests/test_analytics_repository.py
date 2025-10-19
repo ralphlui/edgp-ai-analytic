@@ -33,7 +33,7 @@ class TestAnalyticsRepositoryInitialization:
         repo = AnalyticsRepository()
         
         assert repo.table_name == "analytics_events"
-        mock_boto_resource.assert_called_once_with('dynamodb')
+        mock_boto_resource.assert_called_once_with('dynamodb', region_name='us-east-1')
         mock_dynamodb.Table.assert_any_call("analytics_events")
     
     @patch('app.repositories.analytics_repository.boto3.resource')
