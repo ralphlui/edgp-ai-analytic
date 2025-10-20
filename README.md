@@ -486,6 +486,240 @@ CMD ["uvicorn", "app.analytic_api:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ---
 
+## 🌐 CORS Configuration
+
+### **Overview**
+The application supports environment-aware CORS (Cross-Origin Resource Sharing) configuration for secure cross-origin requests across multiple deployment environments.
+
+### **Setup Instructions**
+
+#### **Step 1: Environment Variables**
+
+Add CORS configuration to your `.env` file:
+
+**Development Environment:**
+```env
+# Environment
+DEBUG=1
+
+# CORS Configuration - Development
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000,http://localhost:5173
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=*
+CORS_ALLOW_HEADERS=*
+CORS_MAX_AGE=600
+```
+
+**Production Environment:**
+```env
+# Environment
+DEBUG=0
+
+# CORS Configuration - Production
+CORS_ORIGINS=https://your-prod-frontend.com,https://www.your-prod-frontend.com
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOW_HEADERS=Authorization,Content-Type,Accept
+CORS_MAX_AGE=3600
+```
+
+#### **Step 2: Update `app/config.py`**
+
+Add CORS configuration variables:
+
+```python
+import os
+from typing import List
+
+# ... existing config ...
+
+# CORS Configuration
+CORS_ORIGINS: List[str] = [
+    origin.strip() 
+    for origin in os.getenv("CORS_ORIGINS", "").split(",") 
+    if origin.strip()
+]
+CORS_ALLOW_CREDENTIALS: bool = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
+
+CORS_ALLOW_METHODS_STR: str = os.getenv("CORS_ALLOW_METHODS", "*")
+CORS_ALLOW_METHODS: List[str] = (
+    [method.strip() for method in CORS_ALLOW_METHODS_STR.split(",") if method.strip()] 
+    if CORS_ALLOW_METHODS_STR != "*" 
+    else ["*"]
+)
+
+CORS_ALLOW_HEADERS_STR: str = os.getenv("CORS_ALLOW_HEADERS", "*")
+CORS_ALLOW_HEADERS: List[str] = (
+    [header.strip() for header in CORS_ALLOW_HEADERS_STR.split(",") if header.strip()] 
+    if CORS_ALLOW_HEADERS_STR != "*" 
+    else ["*"]
+)
+
+CORS_MAX_AGE: int = int(os.getenv("CORS_MAX_AGE", "600"))
+```
+
+#### **Step 3: Update `app/analytic_api.py`**
+
+Add CORS middleware after app creation:
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+from app.config import (
+    DEBUG,
+    CORS_ORIGINS,
+    CORS_ALLOW_CREDENTIALS,
+    CORS_ALLOW_METHODS,
+    CORS_ALLOW_HEADERS,
+    CORS_MAX_AGE
+)
+
+# ... existing code ...
+
+app = FastAPI(
+    title="Analytic Agent API",
+    description="Scalable analytic agent (stateless, DynamoDB conversation history)",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware - Environment-aware configuration
+if DEBUG:
+    # Development environment - more permissive
+    logger.info(f"🔓 CORS enabled for DEVELOPMENT with origins: {CORS_ORIGINS}")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS if CORS_ORIGINS else ["*"],
+        allow_credentials=CORS_ALLOW_CREDENTIALS,
+        allow_methods=CORS_ALLOW_METHODS,
+        allow_headers=CORS_ALLOW_HEADERS,
+        max_age=CORS_MAX_AGE,
+    )
+else:
+    # Production environment - strict whitelist
+    if not CORS_ORIGINS:
+        logger.warning("⚠️  CORS_ORIGINS not configured for production! CORS will be disabled.")
+    else:
+        logger.info(f"🔒 CORS enabled for PRODUCTION with origins: {CORS_ORIGINS}")
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=CORS_ORIGINS,
+            allow_credentials=CORS_ALLOW_CREDENTIALS,
+            allow_methods=CORS_ALLOW_METHODS,
+            allow_headers=CORS_ALLOW_HEADERS,
+            max_age=CORS_MAX_AGE,
+            expose_headers=["X-Request-ID"],
+        )
+```
+
+### **Environment-Specific Examples**
+
+#### **Development (.env)**
+```env
+DEBUG=1
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=*
+CORS_ALLOW_HEADERS=*
+CORS_MAX_AGE=600
+```
+
+#### **Staging (.env.staging)**
+```env
+DEBUG=0
+CORS_ORIGINS=https://staging-frontend.company.com,https://staging-admin.company.com
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOW_HEADERS=Authorization,Content-Type,Accept,X-Request-ID
+CORS_MAX_AGE=3600
+```
+
+#### **Production (.env.production)**
+```env
+DEBUG=0
+CORS_ORIGINS=https://frontend.company.com,https://www.company.com
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOW_HEADERS=Authorization,Content-Type,Accept
+CORS_MAX_AGE=3600
+```
+
+### **Testing CORS**
+
+#### **Preflight Request (OPTIONS)**
+```bash
+curl -X OPTIONS http://localhost:8000/api/analytics/report \
+  -H "Origin: http://localhost:3000" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Authorization,Content-Type" \
+  -v
+```
+
+#### **Actual Request with CORS**
+```bash
+curl -X POST http://localhost:8000/api/analytics/report \
+  -H "Origin: http://localhost:3000" \
+  -H "Authorization: Bearer your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "test query"}' \
+  -v
+```
+
+#### **Expected Response Headers**
+```
+Access-Control-Allow-Origin: http://localhost:3000
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Allow-Headers: Authorization, Content-Type, Accept
+Access-Control-Max-Age: 600
+```
+
+### **Environment Matrix**
+
+| Environment | DEBUG | CORS Origins | Methods | Headers | Max Age |
+|-------------|-------|--------------|---------|---------|---------|
+| **Local Dev** | `1` | `localhost:*` | `*` (All) | `*` (All) | 600s |
+| **Staging** | `0` | Staging domains | Specific | Specific | 3600s |
+| **Production** | `0` | Prod domains only | Specific | Specific | 3600s |
+
+### **Security Best Practices**
+
+✅ **DO:**
+- Specify exact origin domains in production (e.g., `https://frontend.company.com`)
+- Use HTTPS for all production origins
+- Limit HTTP methods to only what you need
+- Set reasonable `max_age` to cache preflight requests
+- Log CORS configuration on startup for debugging
+
+❌ **DON'T:**
+- Never use `allow_origins=["*"]` with `allow_credentials=True` (security risk)
+- Don't use wildcards in production origins
+- Don't allow unnecessary HTTP methods
+- Don't hardcode domains in code (use environment variables)
+
+### **Troubleshooting**
+
+**Issue: CORS error "Origin not allowed"**
+```bash
+# Check CORS_ORIGINS includes your frontend domain
+echo $CORS_ORIGINS
+# Example: http://localhost:3000,http://localhost:8080
+```
+
+**Issue: Credentials not working**
+```bash
+# Ensure CORS_ALLOW_CREDENTIALS is set to true
+echo $CORS_ALLOW_CREDENTIALS
+# Should output: true
+```
+
+**Issue: Custom headers blocked**
+```bash
+# Add your custom headers to CORS_ALLOW_HEADERS
+CORS_ALLOW_HEADERS=Authorization,Content-Type,X-Custom-Header
+```
+
+---
+
 ## 🤝 Contributing
 
 1. **Fork the repository**
