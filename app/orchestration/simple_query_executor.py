@@ -193,21 +193,16 @@ def _deterministic_fallback(state: AnalyticsState, tools: list, report_type: str
         
         target = domain_name or file_name
         target_type = "domain" if domain_name else "file"
-        
+
         return {
-            "tool_result": {
-                "success": False,
-                "needs_clarification": True,
-                "message": f"I found the {target_type} '{target}', but I need to know what you'd like to analyze. Would you like to see:\n\n"
-                          f"1. **Success rate** - How often requests succeed\n"
-                          f"2. **Failure rate** - How often requests fail\n\n"
-                          f"Please specify which analysis you'd prefer.",
-                "suggested_queries": [
-                    f"Show me success rate for {target}",
-                    f"Show me failure rate for {target}"
-                ]
-            }
+        "tool_result": {
+            "success": False,
+            "error": f"I found the {target_type} '{target}', but I need to know what you'd like to analyze. Would you like to see:\n\n"
+                           f"**Success rate** \n"
+                           f" or **Failure rate**"
         }
+        }
+        
     
     # Fallback 3: No valid parameters → Return error
     logger.error("Fallback failed: No valid parameters for tool selection")
