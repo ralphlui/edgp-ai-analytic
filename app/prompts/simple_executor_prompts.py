@@ -106,10 +106,8 @@ Now analyze the available parameters and select the appropriate tool."""
         
         # Validate tool name (strict allowlist)
         tool_allowlist = [
-            'get_success_rate_by_file',
-            'get_failure_rate_by_file',
-            'get_success_rate_by_domain',
-            'get_failure_rate_by_domain'
+            'generate_success_rate_report',
+            'generate_failure_rate_report',
         ]
         
         if data['tool'] not in tool_allowlist:
