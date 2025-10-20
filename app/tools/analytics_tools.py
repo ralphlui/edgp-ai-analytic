@@ -50,8 +50,16 @@ def generate_success_rate_report(
         - generate_success_rate_report(file_name="customer.csv")
     """
     logger.info(f"Tool called: generate_success_rate_report(domain={domain_name}, file={file_name}, org_id={org_id})")
-    
+
     # Validate input
+
+    if not org_id:
+        logger.error("Organization ID not provided")
+        return {
+            "success": False,
+            "error": "Your account is not associated with any organization"
+        }
+    
     if not domain_name and not file_name:
         logger.error("Neither domain_name nor file_name provided")
         return {
@@ -142,6 +150,16 @@ def generate_failure_rate_report(
     logger.info(f"Tool called: generate_failure_rate_report(domain={domain_name}, file={file_name}, org_id={org_id})")
     
     # Validate input - exactly one of domain_name or file_name required
+
+
+    if not org_id:
+        logger.error("Organization ID not provided")
+        return {
+            "success": False,
+            "error": "Your account is not associated with any organization"
+        }
+        
+    
     if not domain_name and not file_name:
         logger.error("Neither domain_name nor file_name provided")
         return {
