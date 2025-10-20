@@ -49,6 +49,11 @@ spec:
                 configMapKeyRef:
                   name: my-configmap
                   key: AUDIT_SQS_URL
+            - name: CORS_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: my-configmap
+                  key: FRONTEND_URL
           resources:
            requests:
              cpu: "50m"
