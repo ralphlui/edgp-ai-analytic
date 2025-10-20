@@ -14,9 +14,9 @@ from app.orchestration.planner_agent import (
     create_execution_plan,
     validate_plan,
     create_comparison_plan,
-    AVAILABLE_ACTIONS,
-    PLANNER_SYSTEM_PROMPT
+    AVAILABLE_ACTIONS
 )
+# Note: PLANNER_SYSTEM_PROMPT moved to secure template (app/prompts/planner_prompts.py)
 
 
 # ============================================================================
@@ -321,26 +321,17 @@ class TestValidatePlan:
 class TestCreateExecutionPlan:
     """Test execution plan creation using LLM."""
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_success(self, mock_chat_openai, mock_prompt_template, valid_llm_response):
+    def test_create_execution_plan_success(self, mock_chat_openai, valid_llm_response):
         """Test successful plan creation with valid LLM response."""
         # Mock LLM response - use string directly so len() works
         json_content = json.dumps(valid_llm_response)
         mock_response = MagicMock()
         mock_response.content = json_content
         
-        # Mock the chain invoke
-        mock_chain = MagicMock()
-        mock_chain.invoke.return_value = mock_response
-        
-        # Mock the prompt template
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
-        # Mock LLM
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Create plan
@@ -360,21 +351,17 @@ class TestCreateExecutionPlan:
         assert plan.steps[3].action == "generate_chart"
         assert plan.steps[4].action == "format_response"
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_with_markdown_wrapped_json(self, mock_chat_openai, mock_prompt_template, valid_llm_response):
+    def test_create_execution_plan_with_markdown_wrapped_json(self, mock_chat_openai, valid_llm_response):
         """Test plan creation when LLM wraps JSON in markdown code blocks."""
         # Mock LLM response with markdown wrapper
         json_content = f"```json\n{json.dumps(valid_llm_response)}\n```"
-        mock_chain = mock_llm_chain(json_content)
+        mock_response = MagicMock()
+        mock_response.content = json_content
         
-        # Mock the prompt template
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
-        # Mock LLM
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Create plan
@@ -389,9 +376,8 @@ class TestCreateExecutionPlan:
         assert plan.query_type == "comparison"
         assert len(plan.steps) == 5
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_with_three_targets(self, mock_chat_openai, mock_prompt_template):
+    def test_create_execution_plan_with_three_targets(self, mock_chat_openai):
         """Test plan creation for 3-target comparison."""
         # Mock LLM response for 3 targets
         three_target_response = {
@@ -452,13 +438,12 @@ class TestCreateExecutionPlan:
         }
         
         json_content = json.dumps(three_target_response)
-        mock_chain = mock_llm_chain(json_content)
+        mock_response = MagicMock()
+        mock_response.content = json_content
         
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Create plan
@@ -476,19 +461,17 @@ class TestCreateExecutionPlan:
         assert plan.steps[2].params["target"] == "transactions.csv"
         assert plan.steps[3].params["compare_steps"] == [1, 2, 3]
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_invalid_json(self, mock_chat_openai, mock_prompt_template):
+    def test_create_execution_plan_invalid_json(self, mock_chat_openai):
         """Test plan creation fails with invalid JSON from LLM."""
         # Mock invalid LLM response
         invalid_content = "This is not valid JSON at all!"
-        mock_chain = mock_llm_chain(invalid_content)
+        mock_response = MagicMock()
+        mock_response.content = invalid_content
         
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Should raise ValueError
@@ -500,9 +483,8 @@ class TestCreateExecutionPlan:
                 query_type="comparison"
             )
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_invalid_plan_structure(self, mock_chat_openai, mock_prompt_template):
+    def test_create_execution_plan_invalid_plan_structure(self, mock_chat_openai):
         """Test plan creation fails with invalid plan (triggers validation error)."""
         # Mock LLM response with invalid plan (non-sequential step IDs)
         invalid_plan = {
@@ -531,13 +513,12 @@ class TestCreateExecutionPlan:
         }
         
         json_content = json.dumps(invalid_plan)
-        mock_chain = mock_llm_chain(json_content)
+        mock_response = MagicMock()
+        mock_response.content = json_content
         
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Should raise ValueError from validate_plan
@@ -634,10 +615,16 @@ class TestConstants:
         assert "format_response" in AVAILABLE_ACTIONS
     
     def test_planner_system_prompt_defined(self):
-        """Test PLANNER_SYSTEM_PROMPT constant is defined."""
-        assert isinstance(PLANNER_SYSTEM_PROMPT, str)
-        assert "query planner" in PLANNER_SYSTEM_PROMPT.lower()
-        assert "AVAILABLE_ACTIONS" in PLANNER_SYSTEM_PROMPT or "query_analytics" in PLANNER_SYSTEM_PROMPT
+        """Test PLANNER_SYSTEM_PROMPT moved to secure template."""
+        # System prompt now in secure template: app/prompts/planner_prompts.py
+        from app.prompts.planner_prompts import PlannerPrompt
+        
+        planner_prompt = PlannerPrompt()
+        system_prompt = planner_prompt.get_system_prompt()
+        
+        assert isinstance(system_prompt, str)
+        assert "query planner" in system_prompt.lower()
+        assert "query_analytics" in system_prompt
 
 
 # ============================================================================
@@ -688,18 +675,16 @@ class TestEdgeCases:
         validate_plan(plan)
         assert len(plan.steps) == 1
     
-    @patch('app.orchestration.planner_agent.ChatPromptTemplate')
     @patch('app.orchestration.planner_agent.ChatOpenAI')
-    def test_create_execution_plan_with_no_targets(self, mock_chat_openai, mock_prompt_template, valid_llm_response):
+    def test_create_execution_plan_with_no_targets(self, mock_chat_openai, valid_llm_response):
         """Test plan creation with None comparison_targets."""
         json_content = json.dumps(valid_llm_response)
-        mock_chain = mock_llm_chain(json_content)
+        mock_response = MagicMock()
+        mock_response.content = json_content
         
-        mock_prompt_instance = MagicMock()
-        mock_prompt_instance.__or__ = MagicMock(return_value=mock_chain)
-        mock_prompt_template.from_messages.return_value = mock_prompt_instance
-        
+        # Mock LLM to return response directly
         mock_llm = MagicMock()
+        mock_llm.invoke.return_value = mock_response
         mock_chat_openai.return_value = mock_llm
         
         # Should handle None targets gracefully
@@ -707,7 +692,7 @@ class TestEdgeCases:
             intent="success_rate",
             comparison_targets=None,
             user_query="General query",
-            query_type="simple"
+            query_type="aggregation"
         )
         
         assert plan is not None

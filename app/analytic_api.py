@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Any
 
 from fastapi import FastAPI, Depends, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
 
@@ -10,6 +11,13 @@ from app.security.auth import bearer_scheme, validate_jwt_token
 from app.services.query_processor import QueryProcessor, PromptRequest
 from app.services.audit_sqs_service import get_audit_sqs_service
 from app.logging_config import setup_logging, get_logger
+from app.config import (
+    CORS_ORIGINS,
+    CORS_ALLOW_CREDENTIALS,
+    CORS_ALLOW_METHODS,
+    CORS_ALLOW_HEADERS,
+    CORS_MAX_AGE
+)
 
 # Setup logging with PII redaction
 setup_logging(log_level="INFO", enable_pii_redaction=True)
@@ -29,6 +37,16 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+logger.info(f"🔒 CORS:mode - Allowing origins: {CORS_ORIGINS}")
+app.add_middleware(
+            CORSMiddleware,
+            allow_origins=CORS_ORIGINS,
+            allow_credentials=CORS_ALLOW_CREDENTIALS,
+            allow_methods=CORS_ALLOW_METHODS,
+            allow_headers=CORS_ALLOW_HEADERS,
+            max_age=CORS_MAX_AGE,
+        )
 
 # Initialize query coordinator
 query_processor = QueryProcessor()

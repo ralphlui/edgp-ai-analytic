@@ -30,14 +30,15 @@ class TestAgentWorkflowIntegration:
         # Mock LLM response for query understanding
         mock_response = Mock()
         mock_response.content = """{
-            "intent": "analytics_request",
+            "intent": "success_rate",
             "slots": {
                 "report_type": "success_rate",
                 "domain_name": "customer"
             },
             "confidence": 0.95,
             "missing_required": [],
-            "is_complete": true
+            "is_complete": true,
+            "query_type": "simple"
         }"""
         
         # Step 1: Query understanding - mock ainvoke method
@@ -48,7 +49,7 @@ class TestAgentWorkflowIntegration:
         understanding_result = await agent.extract_intent_and_slots("Show customer success rate")
         
         # Validate understanding extracted the intent
-        assert understanding_result.intent == "analytics_request" or understanding_result.intent == "general_query"
+        assert understanding_result.intent in ["success_rate", "failure_rate", "general_query"]
         assert understanding_result.confidence > 0
         
         # Step 2: Validate extracted data structure can be passed to workflow

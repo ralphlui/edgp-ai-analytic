@@ -108,3 +108,20 @@ MAX_AGENT_LOOPS = 10
 
 # Application port configuration
 APP_PORT = int(os.getenv("APP_PORT", "8091"))
+
+
+# Parse CORS origins from comma-separated string
+cors_origins_str = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+
+CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
+
+# Parse CORS methods
+cors_methods_str = os.getenv("CORS_ALLOW_METHODS", "*")
+CORS_ALLOW_METHODS = [method.strip() for method in cors_methods_str.split(",") if method.strip()] if cors_methods_str != "*" else ["*"]
+
+# Parse CORS headers
+cors_headers_str = os.getenv("CORS_ALLOW_HEADERS", "*")
+CORS_ALLOW_HEADERS = [header.strip() for header in cors_headers_str.split(",") if header.strip()] if cors_headers_str != "*" else ["*"]
+
+CORS_MAX_AGE = int(os.getenv("CORS_MAX_AGE", "600"))

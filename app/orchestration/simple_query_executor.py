@@ -3,11 +3,11 @@ from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
 from app.config import OPENAI_API_KEY, OPENAI_MODEL
-
-from app.tools.analytics_tools import (
-    generate_success_rate_report,
-    generate_failure_rate_report
+from app.prompts.simple_executor_prompts import (
+    SimpleExecutorToolSelectionPrompt,
+    SimpleExecutorResponseFormattingPrompt
 )
+
 
 logger = logging.getLogger("analytic_agent")
 
@@ -59,119 +59,19 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
     llm_with_tools = llm.bind_tools(tools)
     
-    # Comprehensive system prompt explaining the task
-    system_prompt = """You are an analytics tool selector. Your job is to:
-
-1. **Check if report_type is provided** (from previous conversation context)
-2. **If yes**: Use report_type to select the tool directly (HIGHEST PRIORITY)
-3. **If no**: Analyze the user's query to determine intent from keywords
-4. **Format the tool call** with the correct parameters in JSON format
-
-## PRIORITY RULES (Follow in order):
-
-### Rule 1: Use report_type if provided (HIGHEST PRIORITY)
-If report_type is given in the available parameters:
-- report_type = "success_rate" → MUST call generate_success_rate_report
-- report_type = "failure_rate" → MUST call generate_failure_rate_report
-- Do NOT analyze the user query for intent - trust the report_type
-
-### Rule 2: Analyze user query if report_type is missing (FALLBACK)
-If report_type is null/not provided:
-- Analyze user query for intent keywords:
-  - "success", "wins", "passed", "uptime", "completion" → generate_success_rate_report
-  - "failure", "errors", "issues", "problems", "fail" → generate_failure_rate_report
-
-## Available Tools:
-
-### generate_success_rate_report
-- **Purpose**: Analyze how often requests succeed
-- **When to use**: 
-  - report_type = "success_rate" (explicit - PRIORITY), OR
-  - User asks about success, wins, completion, passed requests, uptime (inferred)
-- **Parameters**: 
-  - domain_name (optional): The domain to analyze (e.g., "customer", "payment")
-  - file_name (optional): The file to analyze (e.g., "customer.csv", "data.json")
-- **JSON Format**: {"domain_name": "value"} OR {"file_name": "value"}
-- **Constraint**: Provide EXACTLY ONE of domain_name or file_name, never both
-
-### generate_failure_rate_report
-- **Purpose**: Analyze how often requests fail
-- **When to use**: 
-  - report_type = "failure_rate" (explicit - PRIORITY), OR
-  - User asks about failures, errors, issues, problems, failed requests (inferred)
-- **Parameters**:
-  - domain_name (optional): The domain to analyze
-  - file_name (optional): The file to analyze
-- **JSON Format**: {"domain_name": "value"} OR {"file_name": "value"}
-- **Constraint**: Provide EXACTLY ONE of domain_name or file_name, never both
-
-## Examples:
-
-**Example 1: Multi-turn with report_type (USE PRIORITY RULE)**
-Available Parameters:
-- report_type: "success_rate"  ← USE THIS FIRST!
-- domain_name: "customer"
-- file_name: null
-
-User Query: "customer domain"  ← Ignore ambiguous query, use report_type
-
-→ Tool: generate_success_rate_report (from report_type, not query)
-→ Args: {"domain_name": "customer", "file_name": null}
-
-**Example 2: Single-turn, no report_type (USE FALLBACK RULE)**
-Available Parameters:
-- report_type: null  ← Not provided, analyze query
-- domain_name: null
-- file_name: "data.csv"
-
-User Query: "Show me failures in data.csv"  ← Analyze "failures" keyword
-
-→ Tool: generate_failure_rate_report (from "failures" keyword)
-→ Args: {"domain_name": null, "file_name": "data.csv"}
-
-**Example 3: Multi-turn continuation**
-Available Parameters:
-- report_type: "failure_rate"  ← USE THIS!
-- domain_name: "payment"
-- file_name: null
-
-User Query: "payment domain"  ← Ignore query, use report_type
-
-→ Tool: generate_failure_rate_report (from report_type)
-→ Args: {"domain_name": "payment", "file_name": null}
-
-**Example 4: Natural language with report_type**
-Available Parameters:
-- report_type: "success_rate"  ← USE THIS!
-- domain_name: null
-- file_name: "data.json"
-
-User Query: "data.json"  ← Ignore query, use report_type
-
-→ Tool: generate_success_rate_report (from report_type)
-→ Args: {"domain_name": null, "file_name": "data.json"}
-
-## Important Rules:
-
-1. **report_type Priority**: ALWAYS use report_type if provided (takes precedence over query analysis)
-2. **XOR Constraint**: NEVER provide both domain_name AND file_name - choose ONE
-3. **Null values**: Set the unused parameter to null/None
-4. **Case sensitivity**: Tool names are case-sensitive
-5. **JSON structure**: Arguments must be valid JSON with quoted keys
-
-Now analyze the available parameters and select the appropriate tool."""
-
-    # Build the prompt with available parameters
-    user_prompt = f"""User Query: "{user_query}"
-
-Available Parameters (extracted from conversation):
-- report_type: {report_type if report_type else "null"}  ← CHECK THIS FIRST!
-- domain_name: {domain_name if domain_name else "null"}
-- file_name: {file_name if file_name else "null"}
-
-IMPORTANT: If report_type is provided, use it to select the tool (PRIORITY). Otherwise, analyze the user query.
-
-Select the appropriate analytics tool and call it with the correct parameters."""
+    # Initialize secure prompt template
+    tool_selection_prompt = SimpleExecutorToolSelectionPrompt()
+    
+    # Get secure system prompt with leakage prevention
+    system_prompt = tool_selection_prompt.get_system_prompt()
+    
+    # Format user message with security validation and structural isolation
+    user_prompt = tool_selection_prompt.format_user_message(
+        user_query=user_query,
+        report_type=report_type or "",
+        domain_name=domain_name or "",
+        file_name=file_name or ""
+    )
 
     # Combine system and user prompts
     messages = [
@@ -414,37 +314,31 @@ def format_response_with_llm(state: AnalyticsState) -> dict:
     # Get raw data
     data = tool_result.get("data", {})
     
-    # Build prompt for LLM to generate ONLY the message text
-    prompt = f"""You are a helpful analytics assistant. The user asked: "{user_query}"
-
-I retrieved the following analytics data:
-- Target Type: {data.get('target_type')}
-- Target Value: {data.get('target_value')}
-- Total Requests: {data.get('total_requests')}
-- Successful Requests: {data.get('successful_requests')}
-- Failed Requests: {data.get('failed_requests')}
-- {"Success" if "success_rate" in data else "Failure"} Rate: {data.get('success_rate', data.get('failure_rate'))}%
-
-A chart visualization {"is" if chart_image else "is NOT"} available.
-
-Please format this data into a natural, conversational response that:
-1. Directly answers the user's question
-2. Highlights key insights based on the metrics
-3. Provides context-appropriate recommendations if the rate is concerning
-4. Uses appropriate emojis for visual clarity
-5. Keeps a friendly, professional tone
-{"6. Mention that a chart is included for visualization" if chart_image else ""}
-
-If there are no requests (total_requests = 0), explain that no data is available yet.
-
-Return ONLY the message text, not JSON. I will wrap it in the response structure.
-"""
+    # Initialize secure prompt template for response formatting
+    response_formatting_prompt = SimpleExecutorResponseFormattingPrompt()
+    
+    # Get secure system prompt with leakage prevention
+    system_prompt = response_formatting_prompt.get_system_prompt()
+    
+    # Format user message with security validation and structural isolation
+    user_prompt = response_formatting_prompt.format_user_message(
+        user_query=user_query,
+        data=data,
+        has_chart=bool(chart_image)
+    )
     
     logger.info("Generating LLM-formatted message...")
     
-    # Use LLM to generate natural response
+    # Use LLM to generate natural response with secure prompts
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, api_key=OPENAI_API_KEY)
-    response = llm.invoke(prompt)
+    
+    # Create messages with secure prompts
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    
+    response = llm.invoke(messages)
     
     message_text = response.content
     logger.info(f"LLM message generated ({len(message_text)} chars)")
@@ -487,58 +381,6 @@ def build_analytics_orchestrator() -> StateGraph:
 
 # Example usage
 async def run_analytics_query(user_query: str, extracted_data: dict, org_id: Optional[str] = None) -> dict:
-    """
-    Run analytics query through orchestrator with hybrid tool selection.
-    
-    The orchestrator uses a two-tier selection strategy:
-    1. **Priority**: If report_type is provided → Use it directly (multi-turn context)
-    2. **Fallback**: If report_type is None → LLM analyzes query keywords (single-turn)
-    
-    This approach provides:
-    - Accuracy for multi-turn conversations (explicit intent from context)
-    - Flexibility for single-turn queries (intelligent keyword analysis)
-    - Robustness (handles both scenarios seamlessly)
-    
-    Args:
-        user_query: Original user question (e.g., "Show me success rate for customer domain")
-        extracted_data: {
-            report_type?: "success_rate" | "failure_rate" | None,  # Explicit intent (priority)
-            domain_name?: str | None,
-            file_name?: str | None
-        }
-        org_id: Organization ID for multi-tenant data isolation (from JWT)
-    
-    Returns:
-        Structured response dictionary:
-        {
-            "success": bool,
-            "message": str (natural language response from LLM),
-            "chart_image": str or None (base64 format)
-        }
-    
-    Examples:
-        # Multi-turn: report_type provided from previous context (PRIORITY)
-        >>> await run_analytics_query(
-        ...     user_query="customer domain",  # Turn 2 (ambiguous)
-        ...     extracted_data={
-        ...         "report_type": "success_rate",  # From Turn 1
-        ...         "domain_name": "customer",
-        ...         "file_name": None
-        ...     }
-        ... )
-        # LLM uses report_type → generate_success_rate_report ✓
-        
-        # Single-turn: LLM decides from query keywords (FALLBACK)
-        >>> await run_analytics_query(
-        ...     user_query="Show me failures in data.csv",
-        ...     extracted_data={
-        ...         "report_type": None,  # Not provided
-        ...         "domain_name": None,
-        ...         "file_name": "data.csv"
-        ...     }
-        ... )
-        # LLM analyzes "failures" → generate_failure_rate_report ✓
-    """
     orchestrator = build_analytics_orchestrator()
     
     initial_state = {

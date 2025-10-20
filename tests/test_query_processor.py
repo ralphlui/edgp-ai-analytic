@@ -169,11 +169,11 @@ class TestQueryHandlerIntentExtraction:
         # Mock agent to return out-of-scope result
         mock_agent = Mock()
         mock_result = Mock()
-        mock_result.intent = "unknown"
+        mock_result.intent = "out_of_scope"  # Use valid intent from allowlist
         mock_result.slots = {}
-        mock_result.is_complete = False
+        mock_result.is_complete = True  # out_of_scope queries are always complete
         mock_result.clarification_needed = "I'm specialized in analytics. Please ask about data analysis."
-        mock_result.query_type = "unknown"
+        mock_result.query_type = "simple"
         mock_result.high_level_intent = None
         
         mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
