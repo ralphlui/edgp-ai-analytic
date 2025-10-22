@@ -678,34 +678,121 @@ class TestExecuteFormatResponse:
 # ============================================================================
 
 class TestShouldContinue:
-    """Test workflow routing logic."""
+    """Test LLM-based workflow routing logic."""
     
-    def test_should_continue_more_steps(self, sample_execution_state):
-        """Test routing when more steps remain."""
+    @pytest.mark.asyncio
+    async def test_should_continue_more_steps(self, sample_execution_state, mocker):
+        """Test LLM decides to continue when more steps remain."""
         sample_execution_state["current_step_index"] = 0
         # Plan has 3 steps total
         
-        result = should_continue(sample_execution_state)
+        # Mock LLM to decide CONTINUE
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "CONTINUE"
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        
+        result = await should_continue(sample_execution_state)
         
         assert result == "continue"
     
-    def test_should_continue_all_steps_done(self, sample_execution_state):
-        """Test routing when all steps are complete."""
+    @pytest.mark.asyncio
+    async def test_should_continue_all_steps_done(self, sample_execution_state, mocker):
+        """Test LLM decides to end when all steps are complete."""
         sample_execution_state["current_step_index"] = 3  # Beyond last step (index 2)
         
-        result = should_continue(sample_execution_state)
+        # Mock LLM to decide END
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "END"
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        
+        result = await should_continue(sample_execution_state)
         
         assert result == "end"
     
-    def test_should_continue_has_errors(self, sample_execution_state):
-        """Test routing when errors exist."""
+    @pytest.mark.asyncio
+    async def test_should_continue_has_errors(self, sample_execution_state, mocker):
+        """Test LLM decides to end when errors exist."""
         sample_execution_state["current_step_index"] = 1
         sample_execution_state["errors"] = ["Database connection failed"]
         
-        result = should_continue(sample_execution_state)
+        # Mock LLM to decide END due to errors
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "END"
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
         
-        # Code stops execution when errors exist
+        result = await should_continue(sample_execution_state)
+        
+        # LLM stops execution when errors exist
         assert result == "end"
+    
+    @pytest.mark.asyncio
+    async def test_should_continue_invalid_llm_response_with_errors(self, sample_execution_state, mocker):
+        """Test fallback logic when LLM returns invalid response and errors exist."""
+        sample_execution_state["current_step_index"] = 1
+        sample_execution_state["errors"] = ["Some error"]
+        
+        # Mock LLM to return invalid response
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "MAYBE"  # Invalid response
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        
+        result = await should_continue(sample_execution_state)
+        
+        # Should fall back to deterministic logic: errors present → end
+        assert result == "end"
+    
+    @pytest.mark.asyncio
+    async def test_should_continue_invalid_llm_response_no_errors(self, sample_execution_state, mocker):
+        """Test fallback logic when LLM returns invalid response and no errors."""
+        sample_execution_state["current_step_index"] = 1
+        sample_execution_state["errors"] = []
+        
+        # Mock LLM to return invalid response
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "INVALID"
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        
+        result = await should_continue(sample_execution_state)
+        
+        # Should fall back to deterministic logic: more steps → continue
+        assert result == "continue"
+    
+    @pytest.mark.asyncio
+    async def test_should_continue_llm_exception(self, sample_execution_state, mocker):
+        """Test fallback logic when LLM call raises exception."""
+        sample_execution_state["current_step_index"] = 0
+        sample_execution_state["errors"] = []
+        
+        # Mock LLM to raise exception
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(side_effect=Exception("API Error"))
+        
+        result = await should_continue(sample_execution_state)
+        
+        # Should fall back to deterministic logic: no errors, more steps → continue
+        assert result == "continue"
+    
+    @pytest.mark.asyncio
+    async def test_should_continue_llm_decides_continue_with_minor_errors(self, sample_execution_state, mocker):
+        """Test LLM can decide to continue despite minor errors."""
+        sample_execution_state["current_step_index"] = 1
+        sample_execution_state["errors"] = ["Non-critical warning"]
+        
+        # Mock LLM to intelligently decide CONTINUE despite errors
+        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
+        mock_response = mocker.MagicMock()
+        mock_response.content = "CONTINUE"  # LLM decides error is non-blocking
+        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        
+        result = await should_continue(sample_execution_state)
+        
+        # LLM's intelligent decision to continue
+        assert result == "continue"
 
 
 # ============================================================================

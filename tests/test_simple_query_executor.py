@@ -302,7 +302,7 @@ class TestDeterministicFallback:
         assert call_args["file_name"] == "customer.csv"
     
     def test_fallback_no_report_type_needs_clarification(self, sample_state):
-        """Test fallback when no report_type, asks for clarification."""
+        """Test fallback when no report_type specified."""
         tools = []
         
         result = _deterministic_fallback(
@@ -314,8 +314,7 @@ class TestDeterministicFallback:
         )
         
         assert result["tool_result"]["success"] == False
-        assert result["tool_result"]["needs_clarification"] == True
-        assert "Would you like to see" in result["tool_result"]["message"]
+        assert "Would you like to see" in result["tool_result"]["error"]
     
     def test_fallback_no_valid_parameters(self, sample_state):
         """Test fallback with no valid parameters returns error."""

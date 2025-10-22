@@ -81,14 +81,14 @@ class TestGenerateSuccessRateReport:
     
     def test_success_rate_no_parameters(self):
         """Test error when neither domain_name nor file_name provided."""
-        result = success_rate_func()
+        result = success_rate_func(org_id="org-123")
         
         assert result["success"] is False
         assert "Must provide either domain_name or file_name" in result["error"]
     
     def test_success_rate_both_parameters(self):
         """Test error when both domain_name and file_name provided."""
-        result = success_rate_func(domain_name="customer", file_name="data.csv")
+        result = success_rate_func(domain_name="customer", file_name="data.csv", org_id="org-123")
         
         assert result["success"] is False
         assert "Provide only ONE of domain_name or file_name" in result["error"]
@@ -100,7 +100,7 @@ class TestGenerateSuccessRateReport:
         mock_repo.get_success_rate_by_domain.side_effect = Exception("DynamoDB error")
         mock_get_repo.return_value = mock_repo
         
-        result = success_rate_func(domain_name="customer")
+        result = success_rate_func(domain_name="customer", org_id="org-123")
         
         assert result["success"] is False
         assert "Error generating report" in result["error"]
@@ -108,22 +108,12 @@ class TestGenerateSuccessRateReport:
     
     @patch('app.tools.analytics_tools.get_analytics_repository')
     def test_success_rate_without_org_id(self, mock_get_repo):
-        """Test success rate generation without org_id."""
-        mock_repo = Mock()
-        mock_repo.get_success_rate_by_domain.return_value = {
-            "target_type": "domain",
-            "target_value": "payment",
-            "total_requests": 2000,
-            "successful_requests": 1800,
-            "failed_requests": 200,
-            "success_rate": 90.0
-        }
-        mock_get_repo.return_value = mock_repo
-        
+        """Test success rate generation without org_id (should fail)."""
         result = success_rate_func(domain_name="payment")
         
-        assert result["success"] is True
-        mock_repo.get_success_rate_by_domain.assert_called_once_with("payment", org_id=None)
+        # Should fail because org_id is required
+        assert result["success"] is False
+        assert "not associated with any organization" in result["error"]
 
 
 class TestGenerateFailureRateReport:
@@ -182,14 +172,14 @@ class TestGenerateFailureRateReport:
     
     def test_failure_rate_no_parameters(self):
         """Test error when neither domain_name nor file_name provided."""
-        result = failure_rate_func()
+        result = failure_rate_func(org_id="org-123")
         
         assert result["success"] is False
         assert "Must provide either domain_name or file_name" in result["error"]
     
     def test_failure_rate_both_parameters(self):
         """Test error when both domain_name and file_name provided."""
-        result = failure_rate_func(domain_name="api.com", file_name="upload.txt")
+        result = failure_rate_func(domain_name="api.com", file_name="upload.txt", org_id="org-123")
         
         assert result["success"] is False
         assert "Provide only ONE of domain_name or file_name" in result["error"]
@@ -201,7 +191,7 @@ class TestGenerateFailureRateReport:
         mock_repo.get_failure_rate_by_file.side_effect = RuntimeError("Connection timeout")
         mock_get_repo.return_value = mock_repo
         
-        result = failure_rate_func(file_name="test.csv")
+        result = failure_rate_func(file_name="test.csv", org_id="org-123")
         
         assert result["success"] is False
         assert "Error generating report" in result["error"]
@@ -209,23 +199,12 @@ class TestGenerateFailureRateReport:
     
     @patch('app.tools.analytics_tools.get_analytics_repository')
     def test_failure_rate_zero_failures(self, mock_get_repo):
-        """Test failure rate report with zero failures."""
-        mock_repo = Mock()
-        mock_repo.get_failure_rate_by_domain.return_value = {
-            "target_type": "domain",
-            "target_value": "perfect.com",
-            "total_requests": 100,
-            "successful_requests": 100,
-            "failed_requests": 0,
-            "failure_rate": 0.0
-        }
-        mock_get_repo.return_value = mock_repo
-        
+        """Test failure rate report with zero failures (should fail without org_id)."""
         result = failure_rate_func(domain_name="perfect.com")
         
-        assert result["success"] is True
-        assert result["data"]["failure_rate"] == 0.0
-        assert result["data"]["failed_requests"] == 0
+        # Should fail because org_id is required
+        assert result["success"] is False
+        assert "not associated with any organization" in result["error"]
 
 
 class TestGetAnalyticsTools:
@@ -283,8 +262,8 @@ class TestToolIntegration:
         mock_get_repo.return_value = mock_repo
         
         # Call both tools
-        success_result = success_rate_func(domain_name="test")
-        failure_result = failure_rate_func(domain_name="test")
+        success_result = success_rate_func(domain_name="test", org_id="org-123")
+        failure_result = failure_rate_func(domain_name="test", org_id="org-123")
         
         # Both should succeed
         assert success_result["success"] is True
@@ -310,8 +289,8 @@ class TestToolIntegration:
         mock_repo.get_failure_rate_by_domain.return_value = mock_data
         mock_get_repo.return_value = mock_repo
         
-        success_result = success_rate_func(domain_name="example.com")
-        failure_result = failure_rate_func(domain_name="example.com")
+        success_result = success_rate_func(domain_name="example.com", org_id="org-123")
+        failure_result = failure_rate_func(domain_name="example.com", org_id="org-123")
         
         # Check both have same structure
         assert set(success_result.keys()) == {"success", "data"}
