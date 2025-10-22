@@ -434,27 +434,105 @@ async def execute_step_node(state: ExecutionState) -> dict:
         }
 
 
-def should_continue(state: ExecutionState) -> str:
+async def should_continue(state: ExecutionState) -> str:
     """
-    Determine if execution should continue or end.
+    LLM-based decision to determine if execution should continue or end.
+    
+    The LLM analyzes the current execution state and decides whether to:
+    - CONTINUE: Proceed to next step
+    - END: Stop execution (completed or unrecoverable errors)
     
     Returns:
-        "continue" if more steps to execute, "end" otherwise
+        "continue" if should proceed, "end" otherwise
     """
+    import json
+    
     plan = state["plan"]
     current_index = state["current_step_index"]
+    step_results = state.get("step_results", {})
+    errors = state.get("errors", [])
     
-    # Check for errors
-    if state["errors"]:
-        logger.error(f"Execution stopped due to errors: {state['errors']}")
-        return "end"
+    # Build context for LLM decision
+    context = {
+        "total_steps": len(plan["steps"]),
+        "current_step": current_index,
+        "remaining_steps": len(plan["steps"]) - current_index,
+        "completed_steps": list(step_results.keys()),
+        "errors": errors,
+        "next_step": plan["steps"][current_index] if current_index < len(plan["steps"]) else None,
+        "last_result": list(step_results.values())[-1] if step_results else None
+    }
     
-    # Check if more steps
-    if current_index < len(plan["steps"]):
-        return "continue"
-    else:
-        logger.info("All steps completed successfully")
-        return "end"
+    # Create decision prompt
+    decision_prompt = f"""You are an execution controller analyzing whether to continue or end execution.
+
+**Current Execution State:**
+{json.dumps(context, indent=2)}
+
+**Decision Criteria:**
+1. If there are CRITICAL errors that block further execution → END
+2. If all planned steps are completed successfully → END
+3. If current step failed but subsequent steps can still proceed → CONTINUE
+4. If dependencies for next step are missing → END
+5. If within normal execution flow with steps remaining → CONTINUE
+
+**Important:**
+- Non-critical errors may allow continuation if remaining steps are independent
+- Consider if partial results are still valuable
+- Evaluate if next step can execute despite previous issues
+
+Analyze the execution state and respond with ONLY one word: "CONTINUE" or "END"
+"""
+    
+    try:
+        # Call LLM for decision
+        llm = ChatOpenAI(
+            model=OPENAI_MODEL,
+            api_key=OPENAI_API_KEY,
+            temperature=0
+        )
+        
+        response = await llm.ainvoke(decision_prompt)
+        decision = response.content.strip().upper()
+        logger.info("LLM Decision Response: %s", decision)
+        
+        # Validate LLM response
+        if decision not in ["CONTINUE", "END"]:
+            logger.warning(f"Invalid LLM decision: '{decision}', applying deterministic fallback logic")
+            # Fallback to previous deterministic logic
+            if errors:
+                logger.error(f"Deterministic decision: Execution stopped due to errors: {errors}")
+                return "end"
+            
+            if current_index < len(plan["steps"]):
+                logger.info(f"Deterministic decision: CONTINUE (step {current_index + 1}/{len(plan['steps'])})")
+                return "continue"
+            else:
+                logger.info("Deterministic decision: All steps completed successfully")
+                return "end"
+        
+        # Log LLM decision
+        if decision == "END":
+            logger.info(f"LLM Decision: END execution at step {current_index}/{len(plan['steps'])}")
+        else:
+            logger.info(f"LLM Decision: CONTINUE to step {current_index + 1}/{len(plan['steps'])}")
+        
+        # Map to graph edge names
+        return "end" if decision == "END" else "continue"
+        
+    except Exception as e:
+        logger.error(f"Error in LLM decision-making: {e}, using deterministic fallback logic")
+        # Fallback to previous deterministic logic on exception
+        if errors:
+            logger.error(f"Deterministic decision: Execution stopped due to errors: {errors}")
+            return "end"
+        
+        if current_index < len(plan["steps"]):
+            logger.info(f"Deterministic decision: CONTINUE (step {current_index + 1}/{len(plan['steps'])})")
+            return "continue"
+        else:
+            logger.info("Deterministic decision: All steps completed successfully")
+            return "end"
 
 
 # ============================================================================
