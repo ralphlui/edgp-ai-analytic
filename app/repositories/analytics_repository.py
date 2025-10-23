@@ -222,7 +222,7 @@ class AnalyticsRepository:
                 logger.info(f"Filtering by organization_id: {org_id}")
 
             # Use scan with filter expression (no GSI required)
-            logger.info(f"Using SCAN with FilterExpression (no GSI)")
+            logger.info(f"Using SCAN with FilterExpression: {filter_expr}")
             response = self.table.scan(FilterExpression=filter_expr)
             
             items.extend(response.get('Items', []))

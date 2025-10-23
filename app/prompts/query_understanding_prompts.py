@@ -40,6 +40,7 @@ Your task is to extract:
 🎯 **SUPPORTED SLOTS:**
 - domain_name: Domain to analyze (e.g., "customer", "product", "order")
 - file_name: File to analyze (e.g., "customer.csv", "sales.json")
+- chart_type: Visualization type (e.g., "bar", "pie", "line", "donut", "area")
 
 ⚠️ **CRITICAL RULES:**
 
@@ -94,14 +95,28 @@ Your task is to extract:
    - Domain names without extension → extract as domain_name
    - For complex queries, also populate comparison_targets
 
-6. **Required Slots per Intent:**
+6. **Chart Type Extraction:**
+   - Keywords "bar chart", "bar graph" → chart_type: "bar"
+   - Keywords "pie chart", "pie graph" → chart_type: "pie"
+   - Keywords "line chart", "line graph", "trend line" → chart_type: "line"
+   - Keywords "donut chart", "donut graph", "doughnut" → chart_type: "donut"
+   - Keywords "area chart", "area graph" → chart_type: "area"
+   - If no visualization keyword mentioned → chart_type: null (will be decided by LLM later)
+   - Examples:
+     * "Show customer success rate as a pie chart" → chart_type: "pie"
+     * "Bar chart for product failures" → chart_type: "bar"
+     * "Customer analytics" (no chart mentioned) → chart_type: null
+     * "Line graph showing trend" → chart_type: "line"
+     * "Display with donut chart" → chart_type: "donut"
+
+7. **Required Slots per Intent:**
    - success_rate/failure_rate (simple) REQUIRES: domain_name OR file_name
    - success_rate/failure_rate (complex comparison) REQUIRES: comparison_targets (at least 2)
    - comparison (complex) REQUIRES: comparison_targets (at least 2)
    - general_query: May have partial information
    - out_of_scope: No slots required
 
-7. **Validation:**
+8. **Validation:**
    - Check if all required slots are present
    - If missing, specify what's needed in "clarification_needed"
    - Set "is_complete" to true only if all required slots are present
@@ -200,6 +215,73 @@ Output: {
   "missing_required": [],
   "is_complete": true,
   "clarification_needed": null
+}
+
+**QUERIES WITH CHART TYPE:**
+
+Input: "Show me customer success rate as a pie chart"
+Output: {
+  "intent": "success_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"domain_name": "customer", "chart_type": "pie"},
+  "comparison_targets": [],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Bar graph showing product failure rate"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"domain_name": "product", "chart_type": "bar"},
+  "comparison_targets": [],
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Display customer.csv analytics with line chart"
+Output: {
+  "intent": "general_query",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"file_name": "customer.csv", "chart_type": "line"},
+  "comparison_targets": [],
+  "confidence": 0.7,
+  "missing_required": ["report_type"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want to analyze customer.csv with a line chart. What type of analysis would you like? (success rate or failure rate)"
+}
+
+Input: "Customer domain analytics"
+Output: {
+  "intent": "general_query",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"domain_name": "customer", "chart_type": null},
+  "comparison_targets": [],
+  "confidence": 0.7,
+  "missing_required": ["report_type"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want to analyze the customer domain. Which metric would you like to analyze? (e.g., 'success rate' or 'failure rate')"
+}
+
+Input: "Failure rate with donut chart"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "simple",
+  "high_level_intent": null,
+  "slots": {"chart_type": "donut"},
+  "comparison_targets": [],
+  "confidence": 0.6,
+  "missing_required": ["domain_name or file_name"],
+  "is_complete": false,
+  "clarification_needed": "I understand you want a failure rate report with a donut chart. Which file or domain would you like to analyze?"
 }
 
 **COMPLEX COMPARISON QUERIES (COMPLETE):**
@@ -342,6 +424,22 @@ Return ONLY valid JSON matching the QueryUnderstandingResult schema. No addition
                     raise PromptSecurityError(f"Slot '{key}' exceeds maximum length (500 chars)")
                 # Sanitize the value
                 data['slots'][key] = self._sanitize_user_input(str(value))
+        
+        # Validate chart_type if present
+        if 'chart_type' in data['slots']:
+            chart_type = data['slots']['chart_type']
+            if chart_type is not None:
+                if not isinstance(chart_type, str):
+                    raise PromptSecurityError("chart_type must be string or null")
+                
+                valid_chart_types = ["bar", "pie", "line", "donut", "area"]
+                if chart_type not in valid_chart_types:
+                    raise PromptSecurityError(
+                        f"Invalid chart_type '{chart_type}'. Must be one of {valid_chart_types}"
+                    )
+                
+                if len(chart_type) > 20:
+                    raise PromptSecurityError("chart_type exceeds maximum length")
         
         # Validate confidence
         if not isinstance(data['confidence'], (int, float)):

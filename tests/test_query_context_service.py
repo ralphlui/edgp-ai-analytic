@@ -427,6 +427,7 @@ class TestUpdateExistingRecord:
             timestamp=1234567890,
             new_intent='success_rate',
             new_slots={'domain_name': 'customer'},
+            new_chart_type='pie',
             new_prompt='show me success rate'
         )
         
@@ -442,6 +443,7 @@ class TestUpdateExistingRecord:
             timestamp=1234567890,
             new_intent='compare',
             new_slots={'domain_name': 'customer'},
+            new_chart_type='bar',
             new_prompt='compare them',
             new_comparison_targets=['customer.csv', 'product.csv']
         )
@@ -455,6 +457,7 @@ class TestUpdateExistingRecord:
             timestamp=1234567890,
             new_intent='success_rate',
             new_slots={'domain_name': 'customer'},
+            new_chart_type=None,
             new_prompt=''  # Empty prompt
         )
         
@@ -470,6 +473,7 @@ class TestUpdateExistingRecord:
             timestamp=1234567890,
             new_intent='success_rate',
             new_slots={'domain_name': 'customer'},
+            new_chart_type='line',
             new_prompt='test'
         )
         
@@ -778,6 +782,7 @@ class TestUpdateExistingRecordEdgeCases:
             timestamp=1234567890,
             new_intent='success_rate',
             new_slots={'domain_name': 'customer'},
+            new_chart_type='donut',
             new_prompt='show me success rate',
             new_comparison_targets=None
         )
@@ -793,6 +798,7 @@ class TestUpdateExistingRecordEdgeCases:
             timestamp=1234567890,
             new_intent='success_rate',
             new_slots={'domain_name': 'customer'},
+            new_chart_type='area',
             new_prompt='show me success rate',
             new_comparison_targets=None
         )

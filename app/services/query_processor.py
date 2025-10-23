@@ -85,7 +85,7 @@ class QueryProcessor:
             result = await agent.extract_intent_and_slots(request.prompt)
             result = agent.validate_completeness(result)
 
-            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Complete: {result.is_complete},  High Intent: {result.high_level_intent}, Clarification: {result.clarification_needed}, Query Type: {result.query_type}")
+            logger.info(f"Extracted - Intent: {result.intent}, Slots: {result.slots}, Chart Type: {result.chart_type}, Complete: {result.is_complete},  High Intent: {result.high_level_intent}, Clarification: {result.clarification_needed}, Query Type: {result.query_type}")
 
             # Handle out-of-scope queries (greetings, chitchat, non-analytics questions)
             if result.intent == "out_of_scope":
@@ -127,6 +127,7 @@ class QueryProcessor:
                     user_id=user_id,
                     intent=report_type,
                     slots=result.slots,
+                    chart_type=result.chart_type,
                     original_prompt=request.prompt,
                     comparison_targets=comparison_targets
                 )
@@ -226,6 +227,14 @@ class QueryProcessor:
             # Retrieve previous data first (for conflict detection and inheritance)
             previous_data = pending_service.get_query_context(user_id)
             
+            # INDEPENDENT INHERITANCE: Chart type should always be inherited if missing
+            # This is separate from intent/target inheritance since chart_type is optional
+            if previous_data and not result.chart_type:
+                prev_chart_type = previous_data.get('chart_type')
+                if prev_chart_type:
+                    result.chart_type = prev_chart_type
+                    logger.info(f"Inherited chart_type '{result.chart_type}' from previous prompt")
+            
             # CONFLICT DETECTION: Check if user is switching target types
             # Skip conflict detection if we're already in a conflict state (marker exists)
             if previous_data and has_target and not previous_data.get('slots', {}).get('_conflict_pending'):
@@ -245,6 +254,7 @@ class QueryProcessor:
                         user_id=user_id,
                         intent=result.intent,
                         slots={**result.slots, '_conflict_pending': True},  # Add marker
+                        chart_type=result.chart_type,
                         original_prompt=f"[CONFLICT] {request.prompt}"
                     )
                     
@@ -372,12 +382,14 @@ class QueryProcessor:
                 logger.info(f"   - user_id: {user_id}")
                 logger.info(f"   - intent: '{result.intent}'")
                 logger.info(f"   - slots: {result.slots}")
+                logger.info(f"   - chart_type: '{result.chart_type}'")
                 logger.info(f"   - prompt: '{request.prompt}'")
                 
                 saved_data = pending_service.save_query_context(
                     user_id=user_id,
                     intent=result.intent,
                     slots=result.slots,
+                    chart_type=result.chart_type,
                     original_prompt=request.prompt
                 )
                 
@@ -385,6 +397,7 @@ class QueryProcessor:
                     logger.info(f"SAVE SUCCESSFUL:")
                     logger.info(f"   - Saved intent: {saved_data.get('intent')}")
                     logger.info(f"   - Saved slots: {saved_data.get('slots')}")
+                    logger.info(f"   - Saved chart_type: {saved_data.get('chart_type')}")
                     logger.info(f"   - Saved prompts count: {len(saved_data.get('prompts', []))}")
                 else:
                     logger.error(f"Failed to save to DynamoDB for user")
@@ -461,10 +474,13 @@ class QueryProcessor:
                 # Pass report_type (intent) to guide LLM tool selection
                 # - If report_type provided: LLM uses it directly (multi-turn context)
                 # - If report_type is None: LLM analyzes query keywords (fallback)
+                logger.info(f"Response - extracted result: {result}")
+              
                 extracted_data = {
                     "report_type": result.intent,
                     "domain_name": result.slots.get("domain_name"),
-                    "file_name": result.slots.get("file_name")
+                    "file_name": result.slots.get("file_name"),
+                    "chart_type": result.chart_type
                 }
                 
                 logger.info(f"Workflow input - Query: '{request.prompt}'")
