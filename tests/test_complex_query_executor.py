@@ -782,20 +782,18 @@ class TestShouldContinue:
     
     @pytest.mark.asyncio
     async def test_should_continue_llm_decides_continue_with_minor_errors(self, sample_execution_state, mocker):
-        """Test LLM can decide to continue despite minor errors."""
-        sample_execution_state["current_step_index"] = 1
-        sample_execution_state["errors"] = ["Non-critical warning"]
+        """Test deterministic logic stops execution when errors are present.
         
-        # Mock LLM to intelligently decide CONTINUE despite errors
-        mock_llm = mocker.patch("app.orchestration.complex_query_executor.ChatOpenAI")
-        mock_response = mocker.MagicMock()
-        mock_response.content = "CONTINUE"  # LLM decides error is non-blocking
-        mock_llm.return_value.ainvoke = mocker.AsyncMock(return_value=mock_response)
+        Note: In the optimized version, errors in state represent critical failures
+        that should stop execution. The LLM decision has been replaced with
+        deterministic rules for better performance."""
+        sample_execution_state["current_step_index"] = 1
+        sample_execution_state["errors"] = ["Critical error from previous step"]
         
         result = await should_continue(sample_execution_state)
         
-        # LLM's intelligent decision to continue
-        assert result == "continue"
+        # Deterministic decision: errors → end execution
+        assert result == "end"
 
 
 # ============================================================================
