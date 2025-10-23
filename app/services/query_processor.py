@@ -253,27 +253,29 @@ class QueryProcessor:
                     pending_service.save_query_context(
                         user_id=user_id,
                         intent=result.intent,
-                        slots={**result.slots, '_conflict_pending': True},  # Add marker
+                        #slots={**result.slots, '_conflict_pending': True},  # Add marker
+                        slots=result.slots,
                         chart_type=result.chart_type,
-                        original_prompt=f"[CONFLICT] {request.prompt}"
+                        #original_prompt=f"[CONFLICT] {request.prompt}"
+                        original_prompt=request.prompt
                     )
                     
                     logger.info(f"Saved conflicting target temporarily with _conflict_pending marker")
                     
                     # Ask user to choose
-                    return {
-                        "success": False,
-                        "message": (
-                            f"⚠️ **Target Conflict Detected**\n\n"
-                            f"I see you mentioned:\n"
-                            f"• **Previously**: {prev_target}\n"
-                            f"• **Just now**: {curr_target}\n\n"
-                            f"Which target should I use?\n"
-                            f"1️⃣  {curr_target} (new target)\n"
-                            f"2️⃣  {prev_target} (previous target)\n\n"
-                        ),
-                        "chart_image": None,
-                    }
+                    # return {
+                    #     "success": False,
+                    #     "message": (
+                    #         f"⚠️ **Target Conflict Detected**\n\n"
+                    #         f"I see you mentioned:\n"
+                    #         f"• **Previously**: {prev_target}\n"
+                    #         f"• **Just now**: {curr_target}\n\n"
+                    #         f"Which target should I use?\n"
+                    #         f"1️⃣  {curr_target} (new target)\n"
+                    #         f"2️⃣  {prev_target} (previous target)\n\n"
+                    #     ),
+                    #     "chart_image": None,
+                    # }
             
             # CONFLICT RESOLUTION: Check if user is responding to a conflict
             if previous_data and previous_data.get('slots', {}).get('_conflict_pending'):
