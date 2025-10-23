@@ -312,6 +312,73 @@ Output: {
   "clarification_needed": null
 }
 
+**COMPLEX COMPARISON QUERIES WITH CHART TYPE:**
+
+Input: "Compare customer.csv and payment.csv success rate as pie chart"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {"chart_type": "pie"},
+  "comparison_targets": ["customer.csv", "payment.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "compare failure rate of customer.csv vs product.csv with bar chart"
+Output: {
+  "intent": "failure_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {"chart_type": "bar"},
+  "comparison_targets": ["customer.csv", "product.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Show line chart comparing customer and payment domains"
+Output: {
+  "intent": "comparison",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {"chart_type": "line"},
+  "comparison_targets": ["customer", "payment"],
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Compare success rate between customer.csv and payment.csv as horizontal bar"
+Output: {
+  "intent": "success_rate",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {"chart_type": "horizontal_bar"},
+  "comparison_targets": ["customer.csv", "payment.csv"],
+  "confidence": 0.95,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
+Input: "Compare customer, payment, and order files with grouped bar chart"
+Output: {
+  "intent": "comparison",
+  "query_type": "complex",
+  "high_level_intent": "comparison",
+  "slots": {"chart_type": "grouped_bar"},
+  "comparison_targets": ["customer.csv", "payment.csv", "order.csv"],
+  "confidence": 0.9,
+  "missing_required": [],
+  "is_complete": true,
+  "clarification_needed": null
+}
+
 **COMPLEX COMPARISON QUERIES (INCOMPLETE):**
 
 Input: "Compare failure rates between customer.csv"
@@ -432,7 +499,7 @@ Return ONLY valid JSON matching the QueryUnderstandingResult schema. No addition
                 if not isinstance(chart_type, str):
                     raise PromptSecurityError("chart_type must be string or null")
                 
-                valid_chart_types = ["bar", "pie", "line", "donut", "area"]
+                valid_chart_types = ["bar", "horizontal_bar", "pie", "line", "donut", "area", "grouped_bar"]
                 if chart_type not in valid_chart_types:
                     raise PromptSecurityError(
                         f"Invalid chart_type '{chart_type}'. Must be one of {valid_chart_types}"

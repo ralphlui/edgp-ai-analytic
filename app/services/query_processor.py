@@ -106,6 +106,9 @@ class QueryProcessor:
                 logger.info(f"Query type is 'complex'. Processing with Planner + Executor")
                 logger.info(f"Comparison targets: {comparison_targets}")
                 
+                # Retrieve previous context for inheritance
+                previous_data = pending_service.get_query_context(user_id)
+                
                 # Determine intent for complex query
                 # Priority 1: Use extracted intent if it's success_rate or failure_rate
                 if result.intent in ['success_rate', 'failure_rate']:
@@ -114,20 +117,27 @@ class QueryProcessor:
                 else:
                     # Priority 2: Try to retrieve from previous context
                     logger.info(f"Intent is '{result.intent}', retrieving from previous context...")
-                    previous_data = pending_service.get_query_context(user_id)
                     if previous_data and previous_data.get('intent') in ['success_rate', 'failure_rate']:
                         report_type = previous_data.get('intent')
                         logger.info(f"Retrieved intent from database: {report_type}")
                     else:
                         report_type = ""
                         logger.warning(f"No valid intent found (current: '{result.intent}', previous: None)")
+                
+                # Inherit chart_type if not provided in current query
+                chart_type_to_save = result.chart_type
+                if not chart_type_to_save and previous_data:
+                    prev_chart_type = previous_data.get('chart_type')
+                    if prev_chart_type:
+                        chart_type_to_save = prev_chart_type
+                        logger.info(f"Inherited chart_type '{chart_type_to_save}' from previous prompt for complex query")
             
                 # Save context for potential multi-turn conversations
                 saved_data = pending_service.save_query_context(
                     user_id=user_id,
                     intent=report_type,
                     slots=result.slots,
-                    chart_type=result.chart_type,
+                    chart_type=chart_type_to_save,  # Use inherited chart_type if current is None
                     original_prompt=request.prompt,
                     comparison_targets=comparison_targets
                 )
@@ -181,13 +191,15 @@ class QueryProcessor:
                     
                     # STEP 2: Execute plan using Complex Query Executor
                     logger.info("STEP 2: Invoking Complex Query Executor to execute plan")
+                    logger.info(f"   Chart type to pass: {chart_type_to_save or 'LLM will suggest'}")
                     from app.orchestration.complex_query_executor import execute_plan
                     
                     
                     result_response = await execute_plan(
                         plan=plan.dict(),  # Convert Pydantic model to dict
                         org_id=org_id,
-                        user_query=request.prompt
+                        user_query=request.prompt,
+                        chart_type=chart_type_to_save
                     )
                     
                     logger.info("Complex Query Executor completed")
@@ -266,7 +278,7 @@ class QueryProcessor:
                     # return {
                     #     "success": False,
                     #     "message": (
-                    #         f"⚠️ **Target Conflict Detected**\n\n"
+                    #         f"**Target Conflict Detected**\n\n"
                     #         f"I see you mentioned:\n"
                     #         f"• **Previously**: {prev_target}\n"
                     #         f"• **Just now**: {curr_target}\n\n"

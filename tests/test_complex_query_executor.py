@@ -539,7 +539,10 @@ class TestExecuteGenerateChart:
         assert "chart_image" in result
         assert result["chart_image"] is not None
         assert len(result["chart_image"]) > 0
-        mock_generate_chart.assert_called_once_with(mock_comparison_data)
+        mock_generate_chart.assert_called_once_with(
+            comparison_data=mock_comparison_data,
+            chart_type='bar'
+        )
     
     @pytest.mark.asyncio
     @patch('app.services.chart_service.generate_comparison_chart')

@@ -25,6 +25,7 @@ class ExecutionState(TypedDict):
     plan: dict  # ExecutionPlan from planner_agent
     org_id: str  # Organization ID for multi-tenant data isolation
     user_query: str  # Original user question
+    chart_type: Optional[str]  # User's preferred chart type (e.g., 'bar', 'pie', 'line')
     current_step_index: int  # Current step being executed
     step_results: Dict[str, Any]  # Results from each step (step_id -> result)
     errors: List[str]  # Accumulated errors during execution
@@ -191,6 +192,96 @@ async def execute_compare_results(
 
 
 # ============================================================================
+# LLM Chart Type Suggestion
+# ============================================================================
+
+async def suggest_chart_type_with_llm(
+    comparison_data: Dict[str, Any],
+    user_query: str
+) -> str:
+    """
+    Use LLM to suggest the best chart type based on comparison data characteristics.
+    
+    This function analyzes:
+    - Number of targets being compared
+    - Metric type (success_rate vs failure_rate)
+    - Data distribution patterns
+    - User's phrasing in the query
+    
+    Args:
+        comparison_data: The comparison result from execute_compare_results
+        user_query: Original user question for context
+    
+    Returns:
+        Suggested chart type: 'bar', 'horizontal_bar', 'line', 'pie', or 'grouped_bar'
+    """
+    logger.info("Invoking LLM to suggest chart type")
+    
+    # Extract relevant information from comparison data
+    num_targets = len(comparison_data.get("comparison_details", []))
+    metric = comparison_data.get("metric_type", "unknown")
+    winner = comparison_data.get("winner", {}).get("target", "unknown")
+    
+    # Build prompt for LLM
+    suggestion_prompt = f"""
+You are a data visualization expert. Based on the comparison data, suggest the MOST APPROPRIATE chart type.
+
+**User Query**: {user_query}
+
+**Comparison Data**:
+- Metric Type: {metric}
+- Number of Targets: {num_targets}
+- Winner: {winner}
+
+**Available Chart Types**:
+1. **bar** - Vertical bar chart (BEST for comparing success/failure rates across targets)
+2. **horizontal_bar** - Horizontal bar chart (better for long target names)
+3. **line** - Line chart (best for showing trends over time or ordered categories)
+4. **grouped_bar** - Grouped bar chart (best for comparing success AND failure rates side-by-side)
+
+**CRITICAL RULES**:
+- **NEVER use 'pie' for comparing success/failure rates** - Pie charts are for showing parts of a whole, NOT for comparing independent percentages
+- For success_rate or failure_rate comparisons → Use 'bar' (vertical) or 'horizontal_bar'
+- For comparing BOTH success AND failure rates → Use 'grouped_bar'
+- For time-series or sequential data → Use 'line'
+
+**Selection Guidelines**:
+- **Comparing success rates or failure rates (2-5 targets)** → 'bar' (DEFAULT)
+- **Target names are long (>15 chars)** → 'horizontal_bar'
+- **Want to see success AND failure side-by-side** → 'grouped_bar'
+- **Time-series or trend data** → 'line'
+
+**Your Task**: Respond with ONLY ONE WORD - the chart type name (bar/horizontal_bar/line/grouped_bar).
+No explanation, just the type name.
+"""
+    
+    try:
+        # Initialize LLM
+        llm = ChatOpenAI(
+            api_key=OPENAI_API_KEY,
+            model=OPENAI_MODEL,
+            temperature=0.0  # Deterministic output
+        )
+        
+        # Get LLM suggestion
+        response = await llm.ainvoke(suggestion_prompt)
+        suggested_type = response.content.strip().lower()
+        
+        # Validate against allowed types (pie removed - not suitable for rate comparisons)
+        allowed_types = ['bar', 'horizontal_bar', 'line', 'grouped_bar']
+        if suggested_type not in allowed_types:
+            logger.warning(f"LLM suggested invalid type '{suggested_type}', defaulting to 'bar'")
+            suggested_type = 'bar'
+        
+        logger.info(f"LLM suggested chart type: {suggested_type}")
+        return suggested_type
+        
+    except Exception as e:
+        logger.error(f"LLM chart type suggestion failed: {e}, defaulting to 'bar'")
+        return 'bar'  # Safe fallback
+
+
+# ============================================================================
 # Action Handler: Generate Chart
 # ============================================================================
 
@@ -203,11 +294,13 @@ async def execute_generate_chart(
     
     This handler:
     1. Retrieves comparison data from previous step
-    2. Calls chart_service to generate visualization
-    3. Returns base64-encoded chart image
+    2. Checks if user specified a chart_type preference
+    3. If not, uses LLM to suggest the best chart type
+    4. Calls chart_service to generate visualization
+    5. Returns base64-encoded chart image
     
     Args:
-        state: Current execution state with step_results
+        state: Current execution state with step_results and chart_type
         step: Current step with params {comparison_step_id}
     
     Returns:
@@ -224,14 +317,32 @@ async def execute_generate_chart(
     
     comparison_data = state["step_results"][comparison_step_id]
     
+    # Determine chart type: use user preference or ask LLM
+    chart_type = state.get("chart_type")
+    
+    if chart_type:
+        logger.info(f"Using user-specified chart type: {chart_type}")
+    else:
+        # logger.info("No user preference, asking LLM for chart type suggestion")
+        # chart_type = await suggest_chart_type_with_llm(
+        #     comparison_data=comparison_data,
+        #     user_query=state["user_query"]
+        # )
+        # logger.info(f"LLM suggested chart type: {chart_type}")
+        chart_type = 'bar'  # Default to 'bar' for simplicity
+    
     # Generate chart using chart_service
     from app.services.chart_service import generate_comparison_chart
     
     try:
-        chart_base64 = generate_comparison_chart(comparison_data)
+        chart_base64 = generate_comparison_chart(
+            comparison_data=comparison_data,
+            chart_type=chart_type
+        )
         
         if chart_base64:
             logger.info(f"Chart generated successfully ({len(chart_base64)} bytes)")
+            logger.info(f"Chart type used: {chart_type}")
             return {"chart_image": chart_base64}
         else:
             logger.warning("Chart generation returned None")
@@ -318,6 +429,21 @@ async def execute_format_response(
         message_text = response.content
         logger.info(f"LLM response generated ({len(message_text)} chars)")
         
+        # Add warning if pie/donut chart was used for comparison
+        chart_type = state.get("chart_type")
+        if chart_type in ["pie", "donut"]:
+            warning_message = (
+                "\n\n💡 Chart Type Note: Pie/donut charts show proportions (parts of a whole), "
+                "which may be misleading when comparing independent success/failure rates. "
+                "The percentages displayed represent relative proportions, not actual rate values.\n\n"
+                "📊 For more accurate comparisons, consider using:\n"
+                "• bar - Shows actual rate values clearly (recommended)\n"
+                "• horizontal_bar - Better for long target names\n"
+                "• grouped_bar - Shows success AND failure rates side-by-side"
+            )
+            message_text += warning_message
+            logger.info(f"Added chart warning for {chart_type} chart in comparison")
+        
         # Build structured response
         final_response = {
             "success": True,
@@ -343,6 +469,21 @@ async def execute_format_response(
         
         if chart_image:
             fallback_message += "\n Chart visualization is included below."
+        
+        # Add warning if pie/donut chart was used for comparison
+        chart_type = state.get("chart_type")
+        if chart_type in ["pie", "donut"]:
+            warning_message = (
+                "\n\n💡 Chart Type Note: Pie/donut charts show proportions (parts of a whole), "
+                "which may be misleading when comparing independent success/failure rates. "
+                "The percentages displayed represent relative proportions, not actual rate values.\n\n"
+                "📊 For more accurate comparisons, consider using:\n"
+                "• bar - Shows actual rate values clearly (recommended)\n"
+                "• horizontal_bar - Better for long target names\n"
+                "• grouped_bar - Shows success AND failure rates side-by-side"
+            )
+            fallback_message += warning_message
+            logger.info(f"Added chart warning for {chart_type} chart in comparison (fallback)")
         
         logger.info("Using fallback formatting due to LLM error")
         
@@ -579,7 +720,8 @@ def build_execution_graph() -> StateGraph:
 async def execute_plan(
     plan: dict,
     org_id: str,
-    user_query: str
+    user_query: str,
+    chart_type: Optional[str] = None
 ) -> dict:
     """
     Execute a complex query execution plan.
@@ -590,6 +732,8 @@ async def execute_plan(
         plan: ExecutionPlan dict from planner_agent.create_execution_plan()
         org_id: Organization ID for multi-tenant data isolation
         user_query: Original user question
+        chart_type: User's preferred chart type (e.g., 'bar', 'pie', 'line'). 
+                   If None, LLM will suggest the best chart type based on data.
     
     Returns:
         Final response dict: {success, message, chart_image}
@@ -597,12 +741,14 @@ async def execute_plan(
     logger.info(f"Starting execution for plan: {plan['plan_id']}")
     logger.info(f"Organization: {org_id}")
     logger.info(f"Steps to execute: {len(plan['steps'])}")
+    logger.info(f"Chart type: {chart_type or 'LLM will suggest'}")
     
     # Initialize state
     initial_state: ExecutionState = {
         "plan": plan,
         "org_id": org_id,
         "user_query": user_query,
+        "chart_type": chart_type,
         "current_step_index": 0,
         "step_results": {},
         "errors": [],
