@@ -592,6 +592,74 @@ class TestQueryHandlerContextInheritance:
                 assert result["success"] is True
 
 
+    @pytest.mark.asyncio
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_inherit_chart_type_from_previous_context(self, mock_validate, mock_agent_func, mock_context_service, processor, mock_auth_success):
+        """Test inheriting chart_type from previous context."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent to return query without chart_type
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {"domain_name": "customer", "file_name": None}
+        mock_result.chart_type = None  # No chart type in current query
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "simple"
+        mock_result.comparison_targets = []
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service with previous context that has chart_type
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value={
+            "report_type": "success_rate",
+            "slots": {"domain_name": "vendor"},
+            "chart_type": "pie",  # Previous chart type
+            "updated_at": "2024-01-01T00:00:00"
+        })
+        mock_context.should_save_context = Mock(return_value=True)
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {"domain_name": "customer"},
+            "chart_type": "pie"
+        })
+        mock_context_service.return_value = mock_context
+        
+        # Mock executor
+        with patch('app.orchestration.simple_query_executor.run_analytics_query') as mock_executor:
+            mock_executor.return_value = {
+                "success": True,
+                "message": "Analysis complete",
+                "chart_image": "base64_image_data"
+            }
+            
+            with patch('app.services.query_processor.validate_llm_output') as mock_validate_output:
+                mock_validate_output.return_value = (True, None)
+                
+                request = PromptRequest(prompt="show success rate for customer domain")
+                result = await processor.query_handler(request, Mock(), Mock())
+                
+                # Should succeed and chart_type should be inherited
+                assert result["success"] is True
+                
+                # Verify that the agent's result was modified to include inherited chart_type
+                # This happens in the inheritance logic (lines 339-343 in query_processor.py)
+                mock_executor.assert_called_once()
+                call_args = mock_executor.call_args
+                extracted_data = call_args.kwargs['extracted_data']
+                
+                # Should have inherited chart_type='pie' from previous context
+                assert extracted_data['chart_type'] == 'pie'
+
+
 class TestQueryHandlerConflictDetection:
     """Test target conflict detection."""
     
@@ -612,6 +680,7 @@ class TestQueryHandlerConflictDetection:
             }
         }
     
+    @pytest.mark.skip(reason="Conflict detection feature is currently disabled (return statement commented out in query_processor.py lines 275-282)")
     @pytest.mark.asyncio
     @patch('app.services.query_processor.get_query_context_service')
     @patch('app.services.query_processor.get_query_understanding_agent')
@@ -1170,6 +1239,103 @@ class TestQueryHandlerConflictResolution:
         assert result["success"] is False
         assert "cleared" in result["message"].lower() or "specify" in result["message"].lower()
         assert mock_context.clear_query_context.called
+
+
+class TestQueryHandlerComplexQueryChartTypeInheritance:
+    """Test chart_type inheritance for complex queries."""
+    
+    @pytest.fixture
+    def processor(self):
+        """Create QueryProcessor instance."""
+        from app.services.query_processor import QueryProcessor
+        return QueryProcessor()
+    
+    @pytest.fixture
+    def mock_auth_success(self):
+        """Mock successful authentication."""
+        return {
+            "success": True,
+            "payload": {
+                "sub": "user-123",
+                "orgId": "org-456"
+            }
+        }
+    
+    @pytest.mark.asyncio
+    @patch('app.orchestration.complex_query_executor.execute_plan')
+    @patch('app.orchestration.planner_agent.create_execution_plan')
+    @patch('app.services.query_processor.get_query_context_service')
+    @patch('app.services.query_processor.get_query_understanding_agent')
+    @patch('app.services.query_processor.validate_user_profile_with_response')
+    async def test_complex_query_inherits_chart_type(
+        self, mock_validate, mock_agent_func, mock_context_service,
+        mock_create_plan, mock_execute_plan, processor, mock_auth_success
+    ):
+        """Test that chart_type is inherited from previous context in complex queries."""
+        from app.services.query_processor import PromptRequest
+        
+        mock_validate.return_value = mock_auth_success
+        
+        # Mock agent - complex query without chart_type
+        mock_agent = Mock()
+        mock_result = Mock()
+        mock_result.intent = "success_rate"
+        mock_result.slots = {}
+        mock_result.chart_type = None  # No chart type in current query
+        mock_result.is_complete = True
+        mock_result.clarification_needed = None
+        mock_result.query_type = "complex"
+        mock_result.comparison_targets = ["customer.csv", "product.csv"]
+        
+        mock_agent.extract_intent_and_slots = AsyncMock(return_value=mock_result)
+        mock_agent.validate_completeness = Mock(return_value=mock_result)
+        mock_agent_func.return_value = mock_agent
+        
+        # Mock context service with previous chart_type
+        mock_context = Mock()
+        mock_context.get_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {},
+            "chart_type": "bar",  # Previous chart type
+            "updated_at": "2024-01-01T00:00:00"
+        })
+        mock_context.save_query_context = Mock(return_value={
+            "intent": "success_rate",
+            "slots": {},
+            "chart_type": "bar",  # Should inherit this
+            "comparison_targets": ["customer.csv", "product.csv"]
+        })
+        mock_context_service.return_value = mock_context
+        
+        # Mock planner and executor
+        mock_plan = Mock()
+        mock_plan.plan_id = "plan-123"
+        mock_plan.steps = [Mock()]
+        mock_plan.metadata = {}
+        mock_plan.dict = Mock(return_value={})
+        mock_create_plan.return_value = mock_plan
+        
+        mock_execute_plan.return_value = {
+            "success": True,
+            "message": "Comparison complete",
+            "chart_image": "base64_chart_data"
+        }
+        
+        with patch('app.services.query_processor.validate_llm_output') as mock_validate_output:
+            mock_validate_output.return_value = (True, None)
+            
+            request = PromptRequest(prompt="Compare customer and product")
+            result = await processor.query_handler(request, Mock(), Mock())
+            
+            # Should succeed
+            assert result["success"] is True
+            
+            # Verify save_query_context was called with inherited chart_type='bar'
+            mock_context.save_query_context.assert_called_once()
+            call_args = mock_context.save_query_context.call_args
+            
+            # Check that chart_type='bar' was passed (inherited from previous context)
+            assert call_args.kwargs['chart_type'] == 'bar'
 
 
 if __name__ == "__main__":

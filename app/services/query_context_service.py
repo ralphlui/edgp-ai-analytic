@@ -94,33 +94,39 @@ class QueryContextService:
         user_id: str,
         intent: str,
         slots: Dict[str, Any],
+        chart_type: Optional[str] = None,
         original_prompt: str = None,
         comparison_targets: Optional[list] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Save query context (report type, slots, prompt, comparison targets) to DynamoDB.
+        Save query context (report type, slots, chart_type, prompt, comparison targets) to DynamoDB.
         
         This is called when:
         - Intent is success_rate or failure_rate
         - OR domain_name OR file_name is present in slots
         
-        If a record already exists for this user, the new prompt is appended to the prompts array.
+        If a record already exists for this user, fields are updated independently:
+        - intent: Update if new value is success_rate or failure_rate, else keep existing
+        - slots: Merge with mutual exclusion for domain_name ↔ file_name
+        - chart_type: Update if provided, else keep existing
         
         Args:
             user_id: The user's ID
             intent: Extracted intent (success_rate, failure_rate, etc.)
-            slots: Extracted slot values (domain_name, file_name, chart_type, etc.)
+            slots: Extracted slot values (domain_name, file_name, etc.)
+            chart_type: Optional preferred chart type (bar, pie, line, donut, area)
             original_prompt: Optional original user prompt for context
             comparison_targets: Optional list of comparison target files
         
         Returns:
-            Dict with all saved values (user_id, intent, slots, prompts, timestamps) or None if save failed
+            Dict with all saved values (user_id, intent, slots, chart_type, prompts, timestamps) or None if save failed
         """
         try:
             logger.info(f"========== SAVE QUERY CONTEXT START ==========")
             logger.info(f"Input parameters:")
             logger.info(f"   - intent: '{intent}'")
             logger.info(f"   - slots: {slots}")
+            logger.info(f"   - chart_type: '{chart_type}'")
             logger.info(f"   - original_prompt: '{original_prompt}'")
             logger.info(f"   - comparison_targets: {comparison_targets}")
             
@@ -131,23 +137,31 @@ class QueryContextService:
                 logger.info(f"Existing record found:")
                 logger.info(f"   - Current intent: '{existing.get('intent')}'")
                 logger.info(f"   - Current slots: {existing.get('slots')}")
-                logger.info(f"   - Will REPLACE with new values (REPLACE strategy)")
+                logger.info(f"   - Current chart_type: '{existing.get('chart_type')}'")
+                logger.info(f"   - Will UPDATE with smart merge strategy")
                 
-                # REPLACE strategy: Update existing record with new values
-                # This also refreshes the TTL
+                # Smart merge strategy: Update each field independently
+                # 1. Intent: Use new if valid, else keep existing
                 existing_intent = existing.get('intent')
-                chosen_intent = ""
-                # Choose incoming intent if it's one we track, otherwise keep the existing intent
-                if intent in ("success_rate", "failure_rate"):
-                    chosen_intent = intent
-                elif existing_intent in ("success_rate", "failure_rate"):
-                    chosen_intent = existing_intent
+                chosen_intent = intent if intent in ("success_rate", "failure_rate") else (existing_intent if existing_intent in ("success_rate", "failure_rate") else "")
+                
+                # 2. Slots: Merge with mutual exclusion for domain_name ↔ file_name
+                merged_slots = self._merge_slots(existing.get('slots', {}), slots)
+                
+                # 3. Chart_type: Use new if provided, else keep existing
+                chosen_chart_type = chart_type if chart_type else existing.get('chart_type')
+                
+                logger.info(f"Smart merge result:")
+                logger.info(f"   - Chosen intent: '{chosen_intent}'")
+                logger.info(f"   - Merged slots: {merged_slots}")
+                logger.info(f"   - Chosen chart_type: '{chosen_chart_type}'")
                
                 updated = self._update_existing_record(
                     user_id=user_id,
                     timestamp=existing['timestamp'],
                     new_intent=chosen_intent,
-                    new_slots=slots,
+                    new_slots=merged_slots,
+                    new_chart_type=chosen_chart_type,
                     new_prompt=original_prompt,
                     new_comparison_targets=comparison_targets
                 )
@@ -158,6 +172,7 @@ class QueryContextService:
                     logger.info(f"Update successful, final record:")
                     logger.info(f"   - Stored intent: '{final_record.get('intent')}'")
                     logger.info(f"   - Stored slots: {final_record.get('slots')}")
+                    logger.info(f"   - Stored chart_type: '{final_record.get('chart_type')}'")
                     logger.info(f"========== SAVE QUERY CONTEXT END ==========")
                     return final_record
                 else:
@@ -190,12 +205,17 @@ class QueryContextService:
                 'updated_at': datetime.now().isoformat()
             }
             
+            # Add chart_type if provided
+            if chart_type:
+                item['chart_type'] = chart_type
+            
             if comparison_targets:
                 item['comparison_targets'] = comparison_targets
             
             logger.info(f"Creating new DynamoDB item:")
             logger.info(f"   - report_type: '{intent}'")
             logger.info(f"   - slots: {slots}")
+            logger.info(f"   - chart_type: '{chart_type}'")
             logger.info(f"   - prompts_count: {len(prompts)}")
             logger.info(f"   - comparison_targets: {comparison_targets}")
             
@@ -209,6 +229,7 @@ class QueryContextService:
             return {
                 'intent': intent,
                 'slots': slots,
+                'chart_type': chart_type,
                 'prompts': prompts,
                 'comparison_targets': comparison_targets
             }
@@ -230,20 +251,26 @@ class QueryContextService:
         timestamp: int,
         new_intent: str,
         new_slots: Dict[str, Any],
+        new_chart_type: Optional[str],
         new_prompt: str,
         new_comparison_targets: Optional[list] = None
     ) -> bool:
         """
-        Update an existing query context record with REPLACE strategy.
+        Update an existing query context record with smart merge strategy.
         
-        This replaces the intent and slots with new values and appends the prompt to history.
-        TTL is also refreshed to keep active conversations alive.
+        Updates each field independently:
+        - intent: Updated with chosen intent
+        - slots: Updated with merged slots
+        - chart_type: Updated if provided, else keeps existing
+        - prompts: Appends to history
+        - TTL: Refreshed to keep active conversations alive
         
         Args:
             user_id: The user's ID
             timestamp: Timestamp of the existing item
-            new_intent: New intent to replace existing (e.g., 'success_rate')
-            new_slots: New slots to replace existing
+            new_intent: New intent to update (already chosen via smart logic)
+            new_slots: New slots to update (already merged via smart logic)
+            new_chart_type: New chart_type to update (or None to keep existing)
             new_prompt: New prompt to append to prompts history
             new_comparison_targets: New comparison targets to replace existing
         
@@ -257,6 +284,7 @@ class QueryContextService:
             logger.info(f"   - timestamp: {timestamp}")
             logger.info(f"   - new_intent: '{new_intent}'")
             logger.info(f"   - new_slots: {new_slots}")
+            logger.info(f"   - new_chart_type: '{new_chart_type}'")
             logger.info(f"   - new_prompt: '{new_prompt}'")
             logger.info(f"   - new_comparison_targets: {new_comparison_targets}")
             
@@ -281,21 +309,27 @@ class QueryContextService:
                                 '#ttl = :ttl')
             
             expression_attribute_values = {
-                ':intent': new_intent,  # REPLACE intent
-                ':slots': new_slots,     # REPLACE slots
+                ':intent': new_intent,  # UPDATE intent
+                ':slots': new_slots,     # UPDATE slots (merged)
                 ':empty_list': [],
                 ':new_prompt': [new_prompt_entry],
                 ':updated_at': datetime.now().isoformat(),
                 ':ttl': new_ttl
             }
             
+            # Add chart_type to update if provided
+            if new_chart_type:
+                update_expression += ', chart_type = :chart_type'
+                expression_attribute_values[':chart_type'] = new_chart_type
+            
             if new_comparison_targets:
                 update_expression += ', comparison_targets = :comparison_targets'
                 expression_attribute_values[':comparison_targets'] = new_comparison_targets
             
             logger.info(f"Performing DynamoDB update:")
-            logger.info(f"   - REPLACE report_type with: '{new_intent}'")
-            logger.info(f"   - REPLACE slots with: {new_slots}")
+            logger.info(f"   - UPDATE report_type to: '{new_intent}'")
+            logger.info(f"   - UPDATE slots to: {new_slots}")
+            logger.info(f"   - UPDATE chart_type to: '{new_chart_type}'")
             logger.info(f"   - APPEND prompt to history")
             logger.info(f"   - REFRESH TTL to: {new_ttl}")
             logger.info(f"   - REPLACE comparison_targets with: {new_comparison_targets}")
@@ -328,6 +362,47 @@ class QueryContextService:
             logger.exception(f"Unexpected error updating record: {e}")
             logger.info(f"========== UPDATE EXISTING RECORD END ==========")
             return False
+    
+    def _merge_slots(self, existing_slots: Dict[str, Any], new_slots: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Merge slots with mutual exclusion for domain_name ↔ file_name.
+        
+        Rules:
+        1. If new_slots has domain_name, remove existing file_name
+        2. If new_slots has file_name, remove existing domain_name
+        3. Other slots are merged (new values overwrite existing)
+        
+        Args:
+            existing_slots: Current slots from database
+            new_slots: New slots from user query
+            
+        Returns:
+            Merged slots dict
+        """
+        # Start with existing slots
+        merged = existing_slots.copy()
+        
+        # Apply mutual exclusion logic
+        has_new_domain = new_slots.get('domain_name')
+        has_new_file = new_slots.get('file_name')
+        
+        if has_new_domain:
+            # User specified domain, remove any existing file
+            merged.pop('file_name', None)
+            merged['domain_name'] = has_new_domain
+            logger.info(f"Mutual exclusion: new domain_name '{has_new_domain}' removes file_name")
+        elif has_new_file:
+            # User specified file, remove any existing domain
+            merged.pop('domain_name', None)
+            merged['file_name'] = has_new_file
+            logger.info(f"Mutual exclusion: new file_name '{has_new_file}' removes domain_name")
+        
+        # Merge other slots (overwrite with new values)
+        for key, value in new_slots.items():
+            if key not in ['domain_name', 'file_name'] and value:
+                merged[key] = value
+        
+        return merged
     
     def get_query_context(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -374,6 +449,7 @@ class QueryContextService:
                 return {
                     'report_type': item.get('report_type'),
                     'slots': item.get('slots', {}),
+                    'chart_type': item.get('chart_type'),
                     'comparison_targets': item.get('comparison_targets'),
                     'updated_at': item.get('updated_at'),
                     'timestamp': item.get('timestamp')
@@ -418,6 +494,7 @@ class QueryContextService:
                 return {
                     'intent': item.get('report_type'),  # Changed from 'intent' to 'report_type'
                     'slots': item.get('slots', {}),
+                    'chart_type': item.get('chart_type'),
                     'comparison_targets': item.get('comparison_targets'),
                     'prompts': item.get('prompts', []),  # Array of prompts
                     'created_at': item.get('created_at'),

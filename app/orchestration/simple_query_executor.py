@@ -53,7 +53,7 @@ def execute_analytics_tool(state: AnalyticsState) -> dict:
     # Strategy 1: Always try LLM first (most flexible)
     # Strategy 2: If LLM fails, use deterministic fallback (most reliable)
     
-    logger.info(f"🤖 Attempting LLM tool selection first...")
+    logger.info(f"Attempting LLM tool selection first...")
     
     # Create LLM with tool calling capability
     llm = ChatOpenAI(model=OPENAI_MODEL, temperature=0, api_key=OPENAI_API_KEY)
@@ -214,7 +214,7 @@ def _deterministic_fallback(state: AnalyticsState, tools: list, report_type: str
     }
 
 
-def generate_chart_node(state: AnalyticsState) -> dict:
+async def generate_chart_node(state: AnalyticsState) -> dict:
     """
     Generate chart from raw analytics data, filtered by report_type.
     
@@ -257,16 +257,37 @@ def generate_chart_node(state: AnalyticsState) -> dict:
     # Log the chart data for debugging
     success_rate = data.get("success_rate", 0)
     
-    # Generate chart with filtered data
+    # Get user-specified chart type from extracted_data (if provided)
+    extracted_data = state["extracted_data"]
+    user_chart_type = extracted_data.get("chart_type")
+    
+    # PRIORITY 1: User explicitly specified chart type
+    if user_chart_type:
+        chart_style = user_chart_type
+        logger.info(f"Using user-specified chart type: {chart_style}")
+    else:
+        chart_style = "bar"  # Default chart type
+        # PRIORITY 2: LLM recommendation (intelligent selection)
+        # logger.info("No user-specified chart type, requesting LLM recommendation...")
+        # from app.services.chart_service import get_chart_type_recommendation
+        
+        # chart_style = await get_chart_type_recommendation(
+        #     user_query=state["user_query"],
+        #     report_type=report_type,
+        #     data=filtered_data
+        # )
+        # logger.info(f"Chart type determined: {chart_style}")
+    
+    # Generate chart with determined style
     from app.services.chart_service import generate_analytics_chart
     
-    logger.info(f"Generating {report_type} chart...")
+    logger.info(f"Generating {report_type} chart with style '{chart_style}'...")
     
     try:
         chart_base64 = generate_analytics_chart(
             data=filtered_data,
             chart_type=report_type,
-            style="bar"
+            style=chart_style
         )
         
         # Return just the base64 string (or None if generation failed)
@@ -493,7 +514,7 @@ if __name__ == "__main__":
         print()
     
     # Run all tests
-    print("\n" + "🚀 Hybrid Tool Selection Tests (Priority + Fallback)".center(60, "="))
+    print("\n" + " Hybrid Tool Selection Tests (Priority + Fallback)".center(60, "="))
     asyncio.run(test_success_rate())
     asyncio.run(test_failure_rate())
     asyncio.run(test_multiturn())

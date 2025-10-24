@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 class QueryUnderstandingResult(BaseModel):
     """Structured result from query understanding."""
     intent: Optional[str] = Field(None, description="Detected user intent (success_rate, failure_rate, both_rate, domain_distribution, etc.)")
-    slots: Dict[str, Any] = Field(default_factory=dict, description="Extracted slot values")
+    slots: Dict[str, Any] = Field(default_factory=dict, description="Extracted slot values (domain_name, file_name, etc.)")
+    chart_type: Optional[str] = Field(None, description="Preferred chart type (bar, pie, line, donut, area)")
     confidence: float = Field(0.0, description="Confidence score (0.0 to 1.0)")
     missing_required: List[str] = Field(default_factory=list, description="List of required slots that are missing")
     is_complete: bool = Field(False, description="Whether query has all required information")
@@ -69,9 +70,14 @@ class QueryUnderstandingAgent:
                 # Validate response schema with security checks
                 self.prompt_template.validate_response_schema(result_dict)
                 
+                # Extract chart_type from slots and move to top-level
+                chart_type = result_dict.get('slots', {}).pop('chart_type', None)
+                if chart_type:
+                    result_dict['chart_type'] = chart_type
+                
                 result = QueryUnderstandingResult(**result_dict)
                 
-                logger.info(f"Extracted intent: {result.intent}, slots: {result.slots}, complete: {result.is_complete}")
+                logger.info(f"Extracted intent: {result.intent}, slots: {result.slots}, chart_type: {result.chart_type}, complete: {result.is_complete}")
                 
                 return result
                 

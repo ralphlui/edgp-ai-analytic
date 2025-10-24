@@ -339,42 +339,46 @@ class TestDeterministicFallback:
 class TestGenerateChartNode:
     """Tests for generate_chart_node function."""
     
+    @pytest.mark.asyncio
     @patch('app.services.chart_service.generate_analytics_chart')
-    def test_generate_chart_success(self, mock_generate_chart, sample_state, sample_tool_result):
+    async def test_generate_chart_success(self, mock_generate_chart, sample_state, sample_tool_result):
         """Test successful chart generation."""
         sample_state["tool_result"] = sample_tool_result
         mock_generate_chart.return_value = "base64_chart_image"
         
-        result = generate_chart_node(sample_state)
+        result = await generate_chart_node(sample_state)
         
         assert result["chart_image"] == "base64_chart_image"
         assert mock_generate_chart.called
     
+    @pytest.mark.asyncio
     @patch('app.services.chart_service.generate_analytics_chart')
-    def test_generate_chart_returns_none(self, mock_generate_chart, sample_state, sample_tool_result):
+    async def test_generate_chart_returns_none(self, mock_generate_chart, sample_state, sample_tool_result):
         """Test chart generation returns None gracefully."""
         sample_state["tool_result"] = sample_tool_result
         mock_generate_chart.return_value = None
         
-        result = generate_chart_node(sample_state)
+        result = await generate_chart_node(sample_state)
         
         assert result["chart_image"] is None
     
+    @pytest.mark.asyncio
     @patch('app.services.chart_service.generate_analytics_chart')
-    def test_generate_chart_exception(self, mock_generate_chart, sample_state, sample_tool_result):
+    async def test_generate_chart_exception(self, mock_generate_chart, sample_state, sample_tool_result):
         """Test chart generation handles exceptions."""
         sample_state["tool_result"] = sample_tool_result
         mock_generate_chart.side_effect = Exception("Chart error")
         
-        result = generate_chart_node(sample_state)
+        result = await generate_chart_node(sample_state)
         
         assert result["chart_image"] is None
     
-    def test_generate_chart_tool_failed(self, sample_state):
+    @pytest.mark.asyncio
+    async def test_generate_chart_tool_failed(self, sample_state):
         """Test chart generation skips when tool failed."""
         sample_state["tool_result"] = {"success": False, "error": "Tool error"}
         
-        result = generate_chart_node(sample_state)
+        result = await generate_chart_node(sample_state)
         
         assert result["chart_image"] is None
 
