@@ -264,6 +264,10 @@ class AnalyticsRepository:
         Query DynamoDB for events by file name.
         First retrieves file_id from header table, then queries tracker table.
         
+        Implements fallback strategy:
+        1. Try exact match with provided file name
+        2. If no results and no extension, try with .csv appended
+        
         Args:
             file_name: File to query
             org_id: Organization ID for multi-tenant filtering (optional)
@@ -284,6 +288,19 @@ class AnalyticsRepository:
             )
             
             header_items = header_response.get('Items', [])
+            
+            # Fallback: If no results and no extension, try with .csv
+            if not header_items and '.' not in file_name_lower:
+                file_name_with_ext = f"{file_name_lower}.csv"
+                logger.info(f"No results for '{file_name_lower}'. Retrying with extension: {file_name_with_ext}")
+                header_response = self.header_table.scan(
+                    FilterExpression=Attr('file_name').eq(file_name_with_ext)
+                )
+                header_items = header_response.get('Items', [])
+                if header_items:
+                    logger.info(f"✅ Found match with .csv extension: {file_name_with_ext}")
+                    file_name_lower = file_name_with_ext  # Update for logging
+            
             if not header_items:
                 logger.warning(f"No file_id found in header table for file_name: {file_name_lower}")
                 return []
