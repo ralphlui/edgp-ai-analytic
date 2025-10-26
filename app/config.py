@@ -7,7 +7,7 @@ def load_environment_config():
     Load environment-specific configuration based on ENV variable.
     
     Environments:
-    - production: Uses .env.production
+    - prd: Uses .env.production
     - sit: Uses .env.sit
     - test: Uses .env.test
     - development: Uses .env (default)
@@ -16,7 +16,7 @@ def load_environment_config():
     
     # Environment file mapping
     env_files = {
-        'production': '.env.production',
+        'prd': '.env.production',
         'sit': '.env.sit',
         'test': '.env.test',
         'development': '.env',
