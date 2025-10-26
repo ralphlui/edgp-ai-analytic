@@ -38,7 +38,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-logger.info(f"🔒 CORS:mode - Allowing origins: {CORS_ORIGINS}")
+logger.info(f"CORS:mode - Allowing origins: {CORS_ORIGINS}")
 app.add_middleware(
             CORSMiddleware,
             allow_origins=CORS_ORIGINS,

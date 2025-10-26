@@ -154,7 +154,7 @@ class SecurePromptTemplate(ABC):
                 f"Expected: {self.TEMPLATE_HASH[:16]}..., Got: {current_hash[:16]}..."
             )
         
-        logger.debug(f"✓ Template integrity verified for {self.__class__.__name__}")
+        logger.debug(f"Template integrity verified for {self.__class__.__name__}")
         return True
     
     def get_template(self) -> str:
@@ -383,7 +383,7 @@ class SecurePromptTemplate(ABC):
 
 {self.LEAKAGE_PREVENTION_RULES}"""
         
-        logger.debug(f"✓ Leakage prevention rules added to {self.__class__.__name__}")
+        logger.debug(f"Leakage prevention rules added to {self.__class__.__name__}")
         return protected_template
     
     def validate_response_format(self, response: str) -> dict:
@@ -417,11 +417,11 @@ class SecurePromptTemplate(ABC):
         
         for pattern, leak_type in self.LEAKAGE_PATTERNS:
             if re.search(pattern, response_lower, re.IGNORECASE):
-                logger.error(f"🚨 REACTIVE: Prompt leakage detected (prevention failed!)")
+                logger.error(f"REACTIVE: Prompt leakage detected (prevention failed!)")
                 logger.error(f"  Leak type: {leak_type}")
                 logger.error(f"  Pattern: {pattern}")
                 logger.error(f"  Response preview: {response[:200]}...")
-                logger.error(f"  ⚠️  This indicates get_template_with_leakage_prevention() was not used!")
+                logger.error(f"  This indicates get_template_with_leakage_prevention() was not used!")
                 return False, leak_type
         
         return True, ""

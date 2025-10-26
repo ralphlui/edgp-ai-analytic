@@ -675,7 +675,7 @@ def generate_comparison_chart(
         # WARNING: Pie chart is not recommended for comparing success/failure rates
         if chart_type == 'pie' and metric in ['success_rate', 'failure_rate']:
             logger.warning(
-                f"⚠️  Pie chart requested for {metric} comparison - this is misleading! "
+                f"Pie chart requested for {metric} comparison - this is misleading! "
                 f"Pie charts show proportions, not actual rate values. "
                 f"Consider using 'bar' or 'horizontal_bar' instead. "
                 f"Proceeding with pie chart as requested by user."

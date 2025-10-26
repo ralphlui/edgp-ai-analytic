@@ -298,7 +298,7 @@ class AnalyticsRepository:
                 )
                 header_items = header_response.get('Items', [])
                 if header_items:
-                    logger.info(f"✅ Found match with .csv extension: {file_name_with_ext}")
+                    logger.info(f"Found match with .csv extension: {file_name_with_ext}")
                     file_name_lower = file_name_with_ext  # Update for logging
             
             if not header_items:
