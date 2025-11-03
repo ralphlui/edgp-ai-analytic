@@ -235,6 +235,7 @@ def test_redaction_patterns():
         "Card: 4532-1234-5678-9010",
         "SSN: 123-45-6789",
         "Bearer: Bearer abc123def456ghi789jkl012mno345pqr678",
+        # nosec B105 - Safe: Test example for PII redaction validation, not a real credential
         "Password: password=MySecretPass123!",
         "URL: https://user:pass@example.com/api",
         "Token: f47ac10b58cc4372a5670e02b2c3d479",
