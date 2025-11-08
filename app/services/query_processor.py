@@ -5,6 +5,7 @@ from typing import Dict, Any
 from app.orchestration.query_understanding_agent import get_query_understanding_agent
 from app.services.query_context_service import get_query_context_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
@@ -15,6 +16,10 @@ from app.security.auth import validate_user_profile_with_response
 SESSION_ID_PREFIX_LENGTH = 8  # For log truncation when needed
 
 logger = logging.getLogger("analytic_agent")
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class PromptRequest(BaseModel):

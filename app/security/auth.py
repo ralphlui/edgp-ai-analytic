@@ -4,10 +4,15 @@ from jose import JWTError, jwt
 import httpx
 import logging
 from app.config import ADMIN_API_BASE_URL, JWT_SECRET_KEY, JWT_ALGORITHM
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 bearer_scheme = HTTPBearer()
 
 logger = logging.getLogger(__name__)
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 # Validate required configuration
 if not JWT_SECRET_KEY:

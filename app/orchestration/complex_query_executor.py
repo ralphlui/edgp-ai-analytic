@@ -7,8 +7,13 @@ from app.prompts.complex_executor_prompts import (
     ComplexExecutorToolSelectionPrompt,
     ComplexExecutorResponseFormattingPrompt
 )
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger("complex_query_executor")
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 # ============================================================================

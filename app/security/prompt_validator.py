@@ -2,8 +2,13 @@ import logging
 import re
 import unicodedata
 from typing import Dict, Any, Tuple
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger("analytic_agent")
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class PromptSecurityValidator:

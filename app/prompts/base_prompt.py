@@ -5,8 +5,13 @@ import re
 import unicodedata
 from abc import ABC, abstractmethod
 from typing import Tuple, Dict, Any
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger(__name__)
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class PromptSecurityError(Exception):
