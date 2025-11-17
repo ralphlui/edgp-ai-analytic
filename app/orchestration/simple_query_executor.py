@@ -2,7 +2,7 @@ import logging
 from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
-from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from config.app_config import OPENAI_API_KEY, OPENAI_MODEL
 from app.prompts.simple_executor_prompts import (
     SimpleExecutorToolSelectionPrompt,
     SimpleExecutorResponseFormattingPrompt

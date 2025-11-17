@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from config.app_config import OPENAI_API_KEY, OPENAI_MODEL
 from app.prompts.planner_prompts import PlannerPrompt
 from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 

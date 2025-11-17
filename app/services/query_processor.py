@@ -179,11 +179,11 @@ class QueryProcessor:
                 logger.info("=" * 80)
                 
                 try:
-                    # STEP 1: Create execution plan using Planner Agent
-                    logger.info("STEP 1: Invoking Planner Agent to create execution plan")
-                    from app.orchestration.planner_agent import create_execution_plan
+                    # STEP 1: Create execution plan using Planner Agent WITH EVALUATION
+                    logger.info("STEP 1: Invoking Planner Agent with LangSmith evaluation")
+                    from app.orchestration.planner_evaluator import create_execution_plan_with_evaluation
                     
-                    plan = create_execution_plan(
+                    plan = create_execution_plan_with_evaluation(
                         intent=saved_data.get('intent'),
                         comparison_targets=saved_data.get('comparison_targets'),
                         user_query=request.prompt,

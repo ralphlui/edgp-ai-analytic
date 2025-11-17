@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import boto3
 from botocore.exceptions import ClientError
 
-from app.config import (
+from config.app_config import (
     AWS_REGION,
     DYNAMODB_CONVERSATION_CONTEXT_TABLE,
     CONVERSATION_CONTEXT_TTL_HOURS

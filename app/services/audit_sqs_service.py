@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 
-from app.config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
+from config.app_config import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
 from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger(__name__)

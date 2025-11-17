@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
-from app.config import DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME, AWS_REGION
+from config.app_config import DYNAMODB_TRACKER_TABLE_NAME, DYNAMODB_HEADER_TABLE_NAME, AWS_REGION
 
 logger = logging.getLogger("analytic_agent")
 
