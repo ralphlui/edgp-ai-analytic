@@ -153,7 +153,8 @@ class PIIRedactionFilter(logging.Filter):
         redacted_msg = self._redact_pii(original_msg)
         
         # Update the record's message and args to prevent re-formatting issues
-        if redacted_msg != original_msg:
+        # Check if any redaction occurred by comparing strings
+        if original_msg != redacted_msg:
             self._redaction_count += 1
             record.msg = redacted_msg
             record.args = ()

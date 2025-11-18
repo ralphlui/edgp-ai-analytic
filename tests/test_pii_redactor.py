@@ -12,7 +12,7 @@ from app.security.pii_redactor import (
     PIIRedactionFilter, 
     redact_pii
 )
-from app.logging_config import (
+from config.logging_config import (
     setup_logging,
     add_pii_filter_to_existing_loggers,
     disable_pii_redaction
@@ -289,7 +289,7 @@ class TestLoggingSetup:
     
     def test_get_logger_returns_logger(self):
         """Test that get_logger returns a valid logger instance."""
-        from app.logging_config import get_logger
+        from config.logging_config import get_logger
         
         logger = get_logger("test_module")
         assert isinstance(logger, logging.Logger)
@@ -301,8 +301,10 @@ class TestEndToEndLogging:
     
     def setup_method(self):
         """Set up logging for each test."""
-        # Clear existing handlers
-        logging.getLogger().handlers.clear()
+        # Clear existing handlers and filters from root logger
+        root_logger = logging.getLogger()
+        root_logger.handlers.clear()
+        root_logger.filters.clear()
         
         # Create string buffer to capture logs
         self.log_stream = StringIO()
@@ -310,6 +312,7 @@ class TestEndToEndLogging:
         # Set up logging with custom handler
         self.handler = logging.StreamHandler(self.log_stream)
         self.handler.setLevel(logging.INFO)
+        self.handler.filters.clear()  # Ensure no pre-existing filters
         formatter = logging.Formatter('%(message)s')
         self.handler.setFormatter(formatter)
         
@@ -320,8 +323,10 @@ class TestEndToEndLogging:
         # Configure logger
         self.logger = logging.getLogger("analytic_agent")
         self.logger.handlers.clear()
+        self.logger.filters.clear()  # Clear any filters on the logger itself
         self.logger.addHandler(self.handler)
         self.logger.setLevel(logging.INFO)
+        self.logger.propagate = False  # Don't propagate to parent loggers
     
     def teardown_method(self):
         """Clean up after each test."""
@@ -398,6 +403,8 @@ class TestEndToEndLogging:
     
     def test_redaction_count_tracking(self):
         """Test that redaction count is accurately tracked."""
+        # Reset counter to ensure clean state
+        self.pii_filter.reset_count()
         initial_count = self.pii_filter.get_redaction_count()
         
         # Log messages with and without PII

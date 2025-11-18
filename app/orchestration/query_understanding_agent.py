@@ -4,10 +4,15 @@ from typing import Dict, Any, Optional, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
-from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from config.app_config import OPENAI_API_KEY, OPENAI_MODEL
 from app.prompts.query_understanding_prompts import QueryUnderstandingPrompt
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger(__name__)
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class QueryUnderstandingResult(BaseModel):

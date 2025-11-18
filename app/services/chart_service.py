@@ -1175,7 +1175,7 @@ async def get_chart_type_recommendation(
         One of: "bar", "pie", "line", "donut", "area"
     """
     from langchain_openai import ChatOpenAI
-    from app.config import OPENAI_API_KEY
+    from config.app_config import OPENAI_API_KEY
     
     try:
         llm = ChatOpenAI(

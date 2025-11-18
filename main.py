@@ -4,10 +4,10 @@ Main entry point for the Analytic Agent API.
 Handles server startup with environment-based configuration.
 """
 import uvicorn
-from app.config import APP_PORT
+from config import APP_PORT
 
 if __name__ == "__main__":
-    print(f"🚀 Starting Analytic Agent API on port {APP_PORT}")
+    print(f"Starting Analytic Agent API on port {APP_PORT}")
     uvicorn.run(
         "app.analytic_api:app",
         host="0.0.0.0",

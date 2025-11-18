@@ -5,6 +5,7 @@ from typing import Dict, Any
 from app.orchestration.query_understanding_agent import get_query_understanding_agent
 from app.services.query_context_service import get_query_context_service
 from app.security.prompt_validator import validate_user_prompt, validate_llm_output
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 from fastapi import Request, Response, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ValidationError, field_validator
@@ -15,6 +16,10 @@ from app.security.auth import validate_user_profile_with_response
 SESSION_ID_PREFIX_LENGTH = 8  # For log truncation when needed
 
 logger = logging.getLogger("analytic_agent")
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class PromptRequest(BaseModel):
@@ -174,11 +179,11 @@ class QueryProcessor:
                 logger.info("=" * 80)
                 
                 try:
-                    # STEP 1: Create execution plan using Planner Agent
-                    logger.info("STEP 1: Invoking Planner Agent to create execution plan")
-                    from app.orchestration.planner_agent import create_execution_plan
+                    # STEP 1: Create execution plan using Planner Agent WITH EVALUATION
+                    logger.info("STEP 1: Invoking Planner Agent with LangSmith evaluation")
+                    from app.orchestration.planner_evaluator import create_execution_plan_with_evaluation
                     
-                    plan = create_execution_plan(
+                    plan = create_execution_plan_with_evaluation(
                         intent=saved_data.get('intent'),
                         comparison_targets=saved_data.get('comparison_targets'),
                         user_query=request.prompt,

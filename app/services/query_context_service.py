@@ -5,13 +5,18 @@ from datetime import datetime, timedelta
 import boto3
 from botocore.exceptions import ClientError
 
-from app.config import (
+from config.app_config import (
     AWS_REGION,
     DYNAMODB_CONVERSATION_CONTEXT_TABLE,
     CONVERSATION_CONTEXT_TTL_HOURS
 )
+from app.security.pii_redactor import PIIRedactionFilter, redact_pii
 
 logger = logging.getLogger(__name__)
+
+# Add PII redaction filter to this logger
+pii_filter = PIIRedactionFilter()
+logger.addFilter(pii_filter)
 
 
 class QueryContextService:
@@ -127,7 +132,7 @@ class QueryContextService:
             logger.info(f"   - intent: '{intent}'")
             logger.info(f"   - slots: {slots}")
             logger.info(f"   - chart_type: '{chart_type}'")
-            logger.info(f"   - original_prompt: '{original_prompt}'")
+            logger.info(f"   - original_prompt: '{redact_pii(original_prompt) if original_prompt else None}'")
             logger.info(f"   - comparison_targets: {comparison_targets}")
             
             # Check if user already has existing context

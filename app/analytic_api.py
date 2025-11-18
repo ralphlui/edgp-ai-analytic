@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from app.security.auth import bearer_scheme, validate_jwt_token
 from app.services.query_processor import QueryProcessor, PromptRequest
 from app.services.audit_sqs_service import get_audit_sqs_service
-from app.logging_config import setup_logging, get_logger
-from app.config import (
+from config.logging_config import setup_logging, get_logger
+from config.app_config import (
     CORS_ORIGINS,
     CORS_ALLOW_CREDENTIALS,
     CORS_ALLOW_METHODS,
